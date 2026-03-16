@@ -1,0 +1,36 @@
+AI can make HR's life easier, faster, and more accurate by:
+
+
+AI Features that Can Help:
+
+1) Recruitment:
+- AI resume screening (filter best candidates automatically)
+- AI-based job description generation
+- Chatbots to interact with candidates
+- Predict which candidates are likely to succeed
+2) Onboarding:
+- Automate document verification
+- AI-powered onboarding FAQs (chatbots)
+3) Attendance & Leave:
+- Auto-anomaly detection (flag suspicious clock-ins/outs)
+- Predict absenteeism trends
+4) Payroll:
+- Automate salary calculations based on hours worked
+- AI to predict errors before payroll is run
+5) Performance Reviews:
+- Analyze feedback sentiment
+- Predict top performers early using trends
+6) Training & Development:
+- Recommend personalized training based on skills gap analysis
+- Identify employees who need help before performance drops
+7) Employee Engagement:
+- Sentiment analysis of surveys
+- AI to detect patterns in complaints/issues before they escalate
+8) Compliance:
+- Monitor documents for expiry (like visas, certifications)
+- Alert for missing mandatory trainings
+9) Exit Management:
+- Predict attrition risks early
+- Automate exit surveys and analyze them
+10) HR Chatbots:
+- Employees ask questions 24/7 ("How many leaves do I have?" or "Where is my payslip?")

@@ -1,4 +1,4 @@
-# Python
+# Python / Django
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,41 +16,44 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Django
-*.log
-local_settings.py
+.env
 db.sqlite3
 db.sqlite3-journal
+hr_backend.db
+*.log
+local_settings.py
 media
+*.db
 
-# Node
+# Virtual Environment
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Node / React
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-
-# React build artifacts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+.pnp.js
+coverage/
+build/
 /build
+dist/
 .DS_Store
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# Virtual Environment
-venv/
-env/
-ENV/
-
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# Database
-*.db 
