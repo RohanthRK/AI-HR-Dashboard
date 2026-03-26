@@ -802,9 +802,12 @@ class TeamStatsView(APIView):
                         "employees": [
                             {
                                 "id": str(e["_id"]),
-                                "name": f"{e.get('first_name', '')} {e.get('last_name', '')}",
+                                "name": f"{e.get('first_name', '')} {e.get('last_name', '')}".strip(),
                                 "position": e.get("position", ""),
-                                "email": e.get("email", "")
+                                "email": e.get("email", ""),
+                                "phone": e.get("phone", ""),
+                                "hire_date": e.get("hire_date", ""),
+                                "employee_id": e.get("employee_id", str(e["_id"]))
                             } for e in team_employees
                         ]
                     })

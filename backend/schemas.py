@@ -41,6 +41,18 @@ department_schema = {
     "is_active": bool,
 }
 
+# Team schema
+team_schema = {
+    "name": str,
+    "description": str,
+    "department_id": str,  # ObjectId as string
+    "department": str,     # Department name
+    "manager_id": str,     # ObjectId as string (Team Lead)
+    "created_at": str,
+    "updated_at": str,
+    "is_active": bool,
+}
+
 # Employee schema
 employee_schema = {
     "employee_id": str,  # Unique employee ID (e.g. EMP0001)
@@ -458,6 +470,7 @@ schemas = {
     "users": user_schema,
     "roles": role_schema,
     "departments": department_schema,
+    "teams": team_schema,
     "employees": employee_schema,
     "documents": document_schema,
     "attendance": attendance_schema,

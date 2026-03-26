@@ -200,13 +200,9 @@ def create_crud_endpoints(collection, required_fields, searchable_fields=None):
             if not is_valid:
                 return error_response
                 
-            # Convert ID fields to ObjectId
-            for key, value in data.items():
-                if key.endswith('_id') and value:
-                    try:
-                        data[key] = ObjectId(value)
-                    except:
-                        pass
+            # We do not convert ID fields to ObjectId because 
+            # the MongoDB schema validator assumes bsonType "string"
+            pass
                         
             # Add timestamps
             now = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
@@ -250,13 +246,9 @@ def create_crud_endpoints(collection, required_fields, searchable_fields=None):
                     'message': f'Item with ID {item_id} not found'
                 }, status=404)
                 
-            # Convert ID fields to ObjectId
-            for key, value in data.items():
-                if key.endswith('_id') and value:
-                    try:
-                        data[key] = ObjectId(value)
-                    except:
-                        pass
+            # We do not convert ID fields to ObjectId because 
+            # the MongoDB schema validator assumes bsonType "string"
+            pass
                         
             # Update timestamp
             data['updated_at'] = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
@@ -305,13 +297,9 @@ def create_crud_endpoints(collection, required_fields, searchable_fields=None):
                     'message': f'Item with ID {item_id} not found'
                 }, status=404)
                 
-            # Convert ID fields to ObjectId
-            for key, value in data.items():
-                if key.endswith('_id') and value:
-                    try:
-                        data[key] = ObjectId(value)
-                    except:
-                        pass
+            # We do not convert ID fields to ObjectId because 
+            # the MongoDB schema validator assumes bsonType "string"
+            pass
                         
             # Update timestamp
             data['updated_at'] = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
