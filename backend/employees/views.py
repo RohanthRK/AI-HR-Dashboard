@@ -15,7 +15,7 @@ from django.http import JsonResponse, HttpResponse, FileResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
-from hr_backend.db import employees, departments, documents
+from hr_backend.db import employees, departments, documents, teams as teams_collection
 from utils.api_utils import (
     serialize_document, 
     create_crud_endpoints,
@@ -212,6 +212,16 @@ def list_employees(request):
                 employee['employment_status'] = employee['status']
             elif 'employment_status' not in employee:
                 employee['employment_status'] = 'Active'  # Default value
+
+            # Resolve team name if team_id exists but team is missing
+            if not employee.get('team') and employee.get('team_id'):
+                try:
+                    from bson import ObjectId as OId
+                    t = teams_collection.find_one({'_id': OId(str(employee['team_id']))})
+                    if t:
+                        employee['team'] = t.get('name', '')
+                except Exception:
+                    pass
         
         # Serialize results
         serialized_results = [serialize_document(doc) for doc in results]
@@ -357,15 +367,15 @@ def create_employee(request):
             data['employment_status'] = 'Active'
             data['status'] = 'Active'
                 
-        # Convert ID fields to ObjectId
-        for key, value in data.items():
-            if key.endswith('_id') and value:
-                try:
-                    data[key] = ObjectId(value)
-                    print(f"🔍 BACKEND: Converted {key} to ObjectId: {value}")
-                except:
-                    print(f"⚠️ BACKEND: Failed to convert {key} to ObjectId: {value}")
-                    pass
+        # Convert numeric fields to correct types
+        if 'salary' in data and data['salary']:
+            try:
+                data['salary'] = float(data['salary'])
+            except ValueError:
+                pass
+                
+        # We do NOT convert ID fields to ObjectId for insertion 
+        # because schemas.py dictates bsonType "string" for relation IDs.
                     
         # Add timestamps
         now = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
@@ -390,15 +400,23 @@ def create_employee(request):
                 **serialize_document(new_employee)
             }
             print(f"🔍 BACKEND: Returning employee data: {response_data}")
-            return JsonResponse(response_data, status=201)
+            response = JsonResponse(response_data, status=201)
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            return response
         else:
             # If the employee couldn't be found (very unlikely), return just the ID
             print(f"⚠️ BACKEND: Created employee not found in database")
-            return JsonResponse({
+            response = JsonResponse({
                 'message': 'Employee created successfully',
                 'id': inserted_id,
                 '_id': inserted_id
             }, status=201)
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            return response
             
     except Exception as e:
         print(f"❌ BACKEND: Error creating employee: {str(e)}")

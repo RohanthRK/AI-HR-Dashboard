@@ -135,6 +135,23 @@ def main():
     db.Departments.insert_many(departments_data)
     print(f"Created {len(departments_data)} departments")
     
+    # Create teams
+    teams_data = []
+    for dept in departments_data:
+        teams_data.append({
+            '_id': ObjectId(),
+            'name': f"{dept['name']} Team Alpha",
+            'description': f"Core team for {dept['name']} operations",
+            'department_id': str(dept['_id']),
+            'department': dept['name'],
+            'manager_id': '',  # Will be assigned later
+            'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
+            'updated_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
+            'is_active': True
+        })
+    db.Teams.insert_many(teams_data)
+    print(f"Created {len(teams_data)} teams")
+    
     # Create users
     admin_role = db.Roles.find_one({'name': 'Admin'})
     manager_role = db.Roles.find_one({'name': 'Manager'})
@@ -208,6 +225,8 @@ def main():
         'role': 'Admin',
         'manager_id': '',
         'department_id': str(departments_data[0]['_id']),  # Executive
+        'team_id': str(teams_data[0]['_id']),
+        'team': teams_data[0]['name'],
         'hire_date': (datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=365)).isoformat(),
         'termination_date': '',
         'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
@@ -245,6 +264,8 @@ def main():
         'role': 'Manager',
         'manager_id': str(employees_data[0]['_id']),
         'department_id': str(departments_data[1]['_id']),  # HR
+        'team_id': str(teams_data[1]['_id']),
+        'team': teams_data[1]['name'],
         'hire_date': (datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=300)).isoformat(),
         'termination_date': '',
         'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
@@ -286,6 +307,8 @@ def main():
             'role': 'Employee',
             'manager_id': str(employees_data[1]['_id']),
             'department_id': str(dept['_id']),
+            'team_id': str(teams_data[i]['_id']),
+            'team': teams_data[i]['name'],
             'hire_date': (datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=200-i*10)).isoformat(),
             'termination_date': '',
             'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),

@@ -216,15 +216,6 @@ def mongodb_create(request):
 def mongodb_update(request, pk=None):
     """
     Update a team in MongoDB with department and employee data
-    
-    Request:
-        {
-            "name": "Team name",
-            "department": "Department name",
-            "description": "Team description",
-            "leader_id": "ID of leader",
-            "employee_ids": ["ID1", "ID2"]
-        }
     """
     try:
         if not pk:
@@ -239,75 +230,76 @@ def mongodb_update(request, pk=None):
         
         data = request.data.copy()
         
-        # Log the incoming request
         print(f"🔹 TEAMS: Updating team {pk} with data: {data}")
         
         # Create an update document
+        new_name = data.get('name', team.get('name'))
+        new_department = data.get('department', team.get('department'))
         update_doc = {
-            'name': data.get('name', team.get('name')),
-            'department': data.get('department', team.get('department')),
+            'name': new_name,
+            'department': new_department,
             'description': data.get('description', team.get('description')),
             'updated_at': datetime.now().isoformat(),
             'employees': []
         }
         
-        # Process employee IDs if provided
+        # Collect old employee ids for comparison
+        old_employee_ids = set(e.get('id', '') for e in team.get('employees', []))
+        
+        # Process new employee IDs
         employee_ids = data.get('employee_ids', [])
         leader_id = data.get('leader_id')
         
-        # If leader_id is provided and not in employee_ids, add it
         if leader_id and leader_id not in employee_ids:
             employee_ids.append(leader_id)
         
+        new_employee_ids = set(str(eid) for eid in employee_ids)
+        
+        # Un-assign employees no longer in this team
+        removed_ids = old_employee_ids - new_employee_ids
+        for removed_id in removed_ids:
+            try:
+                removed_oid = ObjectId(removed_id)
+                employees_collection.update_one(
+                    {'_id': removed_oid},
+                    {'$set': {'team': '', 'team_id': ''}}
+                )
+                print(f"🔹 TEAMS: Cleared team from employee {removed_id}")
+            except Exception as rm_err:
+                print(f"❌ TEAMS: Error clearing team from employee {removed_id}: {rm_err}")
+
         # Fetch employee details and add to team
         if employee_ids:
             for emp_id in employee_ids:
                 try:
-                    # Convert to ObjectId if needed
                     employee_oid = ObjectId(emp_id) if not isinstance(emp_id, ObjectId) else emp_id
                     employee = employees_collection.find_one({'_id': employee_oid})
                     
                     if employee:
-                        # Add employee to team
                         employee_data = {
                             'id': str(employee['_id']),
                             'name': f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip(),
                             'position': employee.get('position', 'Team Member'),
+                            'email': employee.get('email', ''),
+                            'phone': employee.get('phone', ''),
+                            'hire_date': employee.get('hire_date', ''),
+                            'employee_id': employee.get('employee_id', str(employee['_id'])),
                             'is_leader': str(emp_id) == str(leader_id)
                         }
                         update_doc['employees'].append(employee_data)
                         
-                        # Update employee record to include this team
-                        if 'teams' not in employee:
-                            employee['teams'] = []
-                        
-                        # Check if employee is already in this team
-                        team_exists = False
-                        for team_entry in employee.get('teams', []):
-                            if team_entry.get('name') == update_doc['name']:
-                                team_exists = True
-                                # Update team info
-                                team_entry['department'] = update_doc['department']
-                                team_entry['is_leader'] = str(emp_id) == str(leader_id)
-                                break
-                            
-                        if not team_exists:
-                            employee['teams'].append({
-                                'name': update_doc['name'],
-                                'department': update_doc['department'],
-                                'is_leader': str(emp_id) == str(leader_id)
-                            })
-                        
+                        # Update employee record with team info
                         employees_collection.update_one(
                             {'_id': employee_oid},
-                            {'$set': {'teams': employee['teams']}}
+                            {'$set': {
+                                'team': new_name,
+                                'team_id': pk
+                            }}
                         )
                 except Exception as emp_error:
                     print(f"❌ TEAMS: Error processing employee {emp_id}: {str(emp_error)}")
-                    # Continue with other employees
         
         # Update team in MongoDB
-        print(f"🔹 TEAMS: Updating team document: {update_doc}")
         teams_collection.update_one({'_id': team_id}, {'$set': update_doc})
         
         # Get the updated team
@@ -327,6 +319,7 @@ def mongodb_update(request, pk=None):
         print(f"❌ TEAMS: Error updating team: {str(e)}")
         traceback.print_exc()
         return Response({'error': f'Failed to update team: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
