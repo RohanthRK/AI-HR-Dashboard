@@ -1,3 +1,0 @@
-"""
-Chat_Logs app
-"""

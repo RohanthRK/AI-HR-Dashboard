@@ -24,11 +24,11 @@ urlpatterns = [
     
     # Department CRUD
     path('departments/', views.list_departments, name='list_departments'),  # GET
+    path('departments/mongodb/', views.list_departments_mongodb, name='list_departments_mongodb'),
     path('departments/<str:department_id>/', views.get_department, name='get_department'),  # GET
     path('departments/new/', views.create_department, name='create_department'),  # POST
     path('departments/<str:department_id>/update/', views.update_department, name='update_department'),  # PUT
     path('departments/<str:department_id>/partial/', views.partial_update_department, name='partial_update_department'),  # PATCH
     path('departments/<str:department_id>/delete/', views.delete_department, name='delete_department'),  # DELETE
     path('departments/<str:department_id>/employees/', views.get_department_employees, name='get_department_employees'),  # GET
-    path('departments/mongodb/', views.list_departments_mongodb, name='list_departments_mongodb'),
-] 
+]

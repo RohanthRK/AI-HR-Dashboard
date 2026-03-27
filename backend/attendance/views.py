@@ -26,7 +26,7 @@ ATTENDANCE_SEARCHABLE_FIELDS = ['employee_id', 'date', 'status']
 attendance_crud = create_crud_endpoints(
     collection=attendance,
     required_fields=ATTENDANCE_REQUIRED_FIELDS,
-    searchable_fields=ATTENDANCE_SEARCHABLE_FIELDS
+    search_fields=ATTENDANCE_SEARCHABLE_FIELDS
 )
 
 # --- Simple Decorator to Check for user_id --- 

@@ -1,3 +1,0 @@
-"""
-Job_Descriptions app
-"""

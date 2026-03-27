@@ -8,13 +8,10 @@ class EmployeeBasicSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Employee
-        fields = ['id', 'name', 'position', 'employee_id', 'email', 'phone_number']
+        fields = ['id', 'name', 'position', 'employee_id', 'phone_number']
     
     def get_name(self, obj):
         return f"{obj.user.first_name} {obj.user.last_name}"
-    
-    def get_email(self, obj):
-        return obj.user.email
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:

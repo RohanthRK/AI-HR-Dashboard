@@ -116,7 +116,10 @@ def mongodb_create(request):
         }
     """
     try:
-        data = request.data.copy()
+        # Get data from request
+        data = request.data
+        if not data:
+            return Response({'error': 'No data provided'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Log the incoming request
         print(f"🔹 TEAMS: Creating team with data: {data}")
@@ -140,6 +143,12 @@ def mongodb_create(request):
         
         # Process employee IDs if provided
         employee_ids = data.get('employee_ids', [])
+        if isinstance(employee_ids, str):
+            try:
+                employee_ids = json.loads(employee_ids)
+            except:
+                employee_ids = [employee_ids]
+        
         leader_id = data.get('leader_id')
         
         # If leader_id is provided and not in employee_ids, add it
@@ -149,9 +158,15 @@ def mongodb_create(request):
         # Fetch employee details and add to team
         if employee_ids:
             for emp_id in employee_ids:
+                if not emp_id: continue
                 try:
                     # Convert to ObjectId if needed
-                    employee_oid = ObjectId(emp_id) if not isinstance(emp_id, ObjectId) else emp_id
+                    try:
+                        employee_oid = ObjectId(emp_id) if not isinstance(emp_id, ObjectId) else emp_id
+                    except:
+                        print(f"⚠️ TEAMS: Invalid employee ID format: {emp_id}")
+                        continue
+                        
                     employee = employees_collection.find_one({'_id': employee_oid})
                     
                     if employee:
@@ -165,49 +180,49 @@ def mongodb_create(request):
                         team_doc['employees'].append(employee_data)
                         
                         # Update employee record to include this team
-                        if 'teams' not in employee:
-                            employee['teams'] = []
+                        current_teams = employee.get('teams', [])
+                        if not isinstance(current_teams, list):
+                            current_teams = []
                         
                         # Check if employee is already in this team
                         team_exists = False
-                        for team in employee.get('teams', []):
-                            if team.get('name') == team_doc['name']:
+                        for t in current_teams:
+                            if isinstance(t, dict) and t.get('name') == team_doc['name']:
                                 team_exists = True
                                 break
                             
                         if not team_exists:
-                            employee['teams'].append({
+                            current_teams.append({
                                 'name': team_doc['name'],
                                 'department': team_doc['department'],
                                 'is_leader': str(emp_id) == str(leader_id)
                             })
                             employees_collection.update_one(
                                 {'_id': employee_oid},
-                                {'$set': {'teams': employee['teams']}}
+                                {'$set': {'teams': current_teams, 'team': team_doc['name']}}
                             )
                 except Exception as emp_error:
                     print(f"❌ TEAMS: Error processing employee {emp_id}: {str(emp_error)}")
-                    # Continue with other employees
         
         # Insert team into MongoDB
-        print(f"🔹 TEAMS: Inserting team document: {team_doc}")
+        print(f"🔹 TEAMS: Inserting team document into collection: {teams_collection.name}")
         result = teams_collection.insert_one(team_doc)
         team_id = str(result.inserted_id)
         
         # Prepare response with serialized document
+        team_doc['_id'] = result.inserted_id
+        serialized_team = serialize_document(team_doc)
+        
         response_data = {
             'message': 'Team created successfully',
             'id': team_id,
-            'team': {
-                'id': team_id,
-                **team_doc
-            }
+            'team': serialized_team
         }
         
         return Response(response_data, status=status.HTTP_201_CREATED)
         
     except Exception as e:
-        print(f"❌ TEAMS: Error creating team: {str(e)}")
+        print(f"❌ TEAMS: Fatal error creating team: {str(e)}")
         traceback.print_exc()
         return Response({'error': f'Failed to create team: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

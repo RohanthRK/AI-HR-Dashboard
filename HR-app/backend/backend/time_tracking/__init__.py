@@ -1,3 +1,0 @@
-"""
-Time_Tracking app
-"""

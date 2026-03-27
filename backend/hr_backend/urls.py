@@ -180,9 +180,6 @@ urlpatterns = [
     path('api/assets/', include('assets.urls')),
     path('api/helpdesk/', include('helpdesk.urls')),
     path('api/objectives/', include('objectives.urls')),
-    
-    # Temporary URL for debugging
-    path('api/debug/urls/', include('get_urls.urls')),
 ]
 
 # Serve media files in development

@@ -1,3 +1,0 @@
-"""
-Ai_Insights app
-"""

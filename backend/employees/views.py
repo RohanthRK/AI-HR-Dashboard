@@ -26,13 +26,13 @@ from utils.api_utils import (
 EMPLOYEE_REQUIRED_FIELDS = ['first_name', 'last_name', 'email', 'employee_id']
 
 # Define searchable fields for employees
-EMPLOYEE_SEARCHABLE_FIELDS = ['first_name', 'last_name', 'email', 'employee_id', 'position', 'phone']
+EMPLOYEE_search_fields = ['first_name', 'last_name', 'email', 'employee_id', 'position', 'phone']
 
 # Create standard CRUD endpoints
 employee_crud = create_crud_endpoints(
     collection=employees,
     required_fields=EMPLOYEE_REQUIRED_FIELDS,
-    searchable_fields=EMPLOYEE_SEARCHABLE_FIELDS
+    search_fields=EMPLOYEE_search_fields
 )
 
 @csrf_exempt
@@ -77,9 +77,9 @@ def list_employees(request):
         
         # Handle text search
         search = request.GET.get('search', '')
-        if search and EMPLOYEE_SEARCHABLE_FIELDS:
+        if search and EMPLOYEE_search_fields:
             search_conditions = []
-            for field in EMPLOYEE_SEARCHABLE_FIELDS:
+            for field in EMPLOYEE_search_fields:
                 search_conditions.append({field: {'$regex': search, '$options': 'i'}})
             query_filter['$or'] = search_conditions
             
@@ -252,8 +252,8 @@ def list_employees(request):
         return response
             
     except Exception as e:
-        print(f"❌ ERROR in list_employees: {str(e)}")
-        print(f"❌ Traceback: {import_traceback.format_exc()}")
+        print(f"âŒ ERROR in list_employees: {str(e)}")
+        print(f"âŒ Traceback: {import_traceback.format_exc()}")
         
         # Create error response with CORS headers
         response = JsonResponse({
@@ -339,13 +339,13 @@ def create_employee(request):
         - Ensures status/employment_status field consistency
     """
     try:
-        print(f"🔍 BACKEND: Received employee creation request")
+        print(f"ðŸ” BACKEND: Received employee creation request")
         # Parse JSON data
         try:
             data = json.loads(request.body)
-            print(f"🔍 BACKEND: Parsed employee data: {data}")
+            print(f"ðŸ” BACKEND: Parsed employee data: {data}")
         except json.JSONDecodeError:
-            print(f"❌ BACKEND: Invalid JSON data in request")
+            print(f"âŒ BACKEND: Invalid JSON data in request")
             return JsonResponse({
                 'error': 'Invalid request',
                 'message': 'Invalid JSON data'
@@ -354,7 +354,7 @@ def create_employee(request):
         # Validate required fields
         is_valid, error_response = validate_required_fields(data, EMPLOYEE_REQUIRED_FIELDS)
         if not is_valid:
-            print(f"❌ BACKEND: Missing required fields")
+            print(f"âŒ BACKEND: Missing required fields")
             return error_response
             
         # Ensure status/employment_status field consistency
@@ -383,10 +383,10 @@ def create_employee(request):
         data['updated_at'] = now
         
         # Insert into database
-        print(f"🔍 BACKEND: Inserting employee into database")
+        print(f"ðŸ” BACKEND: Inserting employee into database")
         result = employees.insert_one(data)
         inserted_id = str(result.inserted_id)
-        print(f"🔍 BACKEND: Employee created with ID: {inserted_id}")
+        print(f"ðŸ” BACKEND: Employee created with ID: {inserted_id}")
         
         # Fetch the complete employee record to return
         new_employee = employees.find_one({"_id": result.inserted_id})
@@ -399,7 +399,7 @@ def create_employee(request):
                 # Include all the employee data
                 **serialize_document(new_employee)
             }
-            print(f"🔍 BACKEND: Returning employee data: {response_data}")
+            print(f"ðŸ” BACKEND: Returning employee data: {response_data}")
             response = JsonResponse(response_data, status=201)
             response["Access-Control-Allow-Origin"] = "*"
             response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
@@ -407,7 +407,7 @@ def create_employee(request):
             return response
         else:
             # If the employee couldn't be found (very unlikely), return just the ID
-            print(f"⚠️ BACKEND: Created employee not found in database")
+            print(f"âš ï¸ BACKEND: Created employee not found in database")
             response = JsonResponse({
                 'message': 'Employee created successfully',
                 'id': inserted_id,
@@ -419,8 +419,8 @@ def create_employee(request):
             return response
             
     except Exception as e:
-        print(f"❌ BACKEND: Error creating employee: {str(e)}")
-        print(f"❌ BACKEND: Traceback: {import_traceback.format_exc()}")
+        print(f"âŒ BACKEND: Error creating employee: {str(e)}")
+        print(f"âŒ BACKEND: Traceback: {import_traceback.format_exc()}")
         return JsonResponse({
             'error': 'Server error',
             'message': str(e)
@@ -801,12 +801,12 @@ def delete_document(request, employee_id, document_id):
 
 # Department CRUD endpoints
 DEPARTMENT_REQUIRED_FIELDS = ['name']
-DEPARTMENT_SEARCHABLE_FIELDS = ['name', 'description']
+DEPARTMENT_search_fields = ['name', 'description']
 
 department_crud = create_crud_endpoints(
     collection=departments,
     required_fields=DEPARTMENT_REQUIRED_FIELDS,
-    searchable_fields=DEPARTMENT_SEARCHABLE_FIELDS
+    search_fields=DEPARTMENT_search_fields
 )
 
 @csrf_exempt
@@ -1256,8 +1256,8 @@ def debug_employees(request):
         return response
             
     except Exception as e:
-        print(f"❌ ERROR in debug_employees: {str(e)}")
-        print(f"❌ Traceback: {import_traceback.format_exc()}")
+        print(f"âŒ ERROR in debug_employees: {str(e)}")
+        print(f"âŒ Traceback: {import_traceback.format_exc()}")
         
         # Create error response with CORS headers
         response = JsonResponse({
@@ -1328,7 +1328,7 @@ def list_departments_mongodb(request):
         sort_order = 1 if request.GET.get('order', 'asc') == 'asc' else -1
         
         # Execute query
-        cursor = departments_collection.find(query_filter).sort(sort_field, sort_order)
+        cursor = departments.find(query_filter).sort(sort_field, sort_order)
         
         # Apply pagination and get results
         page = int(request.GET.get('page', 1))
@@ -1338,7 +1338,7 @@ def list_departments_mongodb(request):
         skip = (page - 1) * limit
         
         # Count total documents (before pagination)
-        total_count = departments_collection.count_documents(query_filter)
+        total_count = departments.count_documents(query_filter)
         
         # Get paginated results
         results = list(cursor.skip(skip).limit(limit))

@@ -1,3 +1,0 @@
-"""
-Employee_Skills app
-"""
