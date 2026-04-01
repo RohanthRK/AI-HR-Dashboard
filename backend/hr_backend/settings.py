@@ -65,7 +65,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # Authentication middleware has been removed
+    'auth_app.middleware.JWTAuthMiddleware',
 ]
 
 # CORS settings

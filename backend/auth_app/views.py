@@ -27,17 +27,78 @@ def hash_password(password):
 def login(request):
     """
     Login endpoint that validates credentials and issues JWT token
-    MODIFIED: Currently bypassing credential validation for development
     Endpoint: POST /api/auth/login
     """
     try:
-        # Development mode: ignore credentials, always return admin token
-        # Generate JWT token with admin role
+        # Parse JSON data
+        data = json.loads(request.body)
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return JsonResponse({
+                'error': 'Missing credentials',
+                'message': 'Username and password are required'
+            }, status=400)
+            
+        # Find user in MongoDB
+        user = users.find_one({'username': username})
+        
+        if not user:
+            return JsonResponse({
+                'error': 'Unauthorized',
+                'message': 'Invalid username or password'
+            }, status=401)
+            
+        # Check password
+        # Support both SHA256 (from seed) and Django's make_password (new users)
+        is_valid = False
+        stored_password = user.get('password') or user.get('password_hash')
+        
+        if not stored_password:
+            return JsonResponse({
+                'error': 'Config error',
+                'message': 'User has no password set'
+            }, status=500)
+            
+        # 1. Try Django's check_password (pbkdf2, etc.)
+        try:
+            is_valid = check_password(password, stored_password)
+        except:
+            is_valid = False
+            
+        # 2. Try SHA256 if standard check fails (for legacy/seed users)
+        if not is_valid:
+            sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+            if sha256_hash == stored_password:
+                is_valid = True
+                # Automatically upgrade password to more secure hash
+                users.update_one(
+                    {'_id': user['_id']},
+                    {'$set': {'password': hash_password(password)}}
+                )
+        
+        if not is_valid:
+            return JsonResponse({
+                'error': 'Unauthorized',
+                'message': 'Invalid username or password'
+            }, status=401)
+            
+        # Generate JWT token
         expiry = datetime.datetime.now(tz=datetime.timezone.utc) + settings.JWT_EXPIRATION_DELTA
+        
+        # Get role name
+        role_name = 'Employee' # Default
+        if user.get('role_id'):
+            role_doc = roles.find_one({'_id': ObjectId(user['role_id'])})
+            if role_doc:
+                role_name = role_doc.get('name', 'Employee')
+        
         payload = {
-            'user_id': "000000000000000000000001",  # Default admin ID
-            'username': "admin",
-            'role': "Admin",
+            'user_id': str(user['_id']),
+            'username': user['username'],
+            'role': role_name,
+            'employee_id': user.get('employee_id', ''),
             'exp': expiry
         }
         
@@ -47,17 +108,24 @@ def login(request):
             algorithm=settings.JWT_ALGORITHM
         )
         
-        # Return token and admin user info
+        # Return token and user info
         return JsonResponse({
             'token': token,
             'user': {
-                'id': "000000000000000000000001",
-                'username': "admin",
-                'role': "Admin",
+                'id': str(user['_id']),
+                'username': user['username'],
+                'role': role_name,
+                'email': user.get('email', ''),
+                'employee_id': user.get('employee_id', ''),
                 'expires': expiry.isoformat()
             }
         })
         
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'error': 'Invalid request',
+            'message': 'Invalid JSON data'
+        }, status=400)
     except Exception as e:
         return JsonResponse({
             'error': 'Server error',

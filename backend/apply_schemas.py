@@ -15,18 +15,18 @@ from schemas import schemas
 
 def type_to_bson(t):
     if t == str:
-        return "string"
+        return ["string", "objectId", "null"]
     elif t == int:
-        return "int"
+        return ["int", "null"]
     elif t == float:
-        return "double"
+        return ["double", "null"]
     elif t == bool:
-        return "bool"
+        return ["bool", "null"]
     elif t == list:
-        return "array"
+        return ["array", "null"]
     elif t == dict:
-        return "object"
-    return "string"
+        return ["object", "null"]
+    return ["string", "null"]
 
 def build_json_schema(python_schema, is_root=True):
     bson_schema = {

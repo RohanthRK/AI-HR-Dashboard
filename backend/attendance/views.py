@@ -107,30 +107,20 @@ def delete_attendance(request, attendance_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@require_user_id # Use the simple decorator
+@require_user_id
 def get_user_attendance_status(request):
     """
     Get the current clock-in status for the authenticated user.
     Endpoint: GET /api/attendance/status/
-    Requires Auth: Yes (via middleware attaching user_id)
     """
     try:
-        employee_id_str = request.user_id # Get ID from middleware
+        employee_id_str = request.employee_id
         
-        # Debug logging - add this
-        print(f"Getting attendance status for user_id: {employee_id_str}")
+        if not employee_id_str:
+            return JsonResponse({'is_clocked_in': False, 'last_check_in': None})
         
         # Check if employee exists in database first
-        employee = employees.find_one({"_id": ObjectId(employee_id_str)})
-        if not employee:
-            # For development, create a mock response
-            print(f"Warning: Employee with ID {employee_id_str} not found, returning mock data")
-            return JsonResponse({
-                'is_clocked_in': False,
-                'last_check_in': None,
-                'current_server_time': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
-                'debug_info': f"Employee ID {employee_id_str} not found"
-            })
+        employee_id = employee_id_str
         
         # Get current date and time
         now = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -138,16 +128,25 @@ def get_user_attendance_status(request):
         
         # Check for today's record
         today_record = attendance.find_one({
-            'employee_id': ObjectId(employee_id_str),
+            'employee_id': ObjectId(employee_id),
             'date': today
         })
         
         is_clocked_in = False
         last_check_in = None
         
-        if today_record and today_record.get('clock_in') and not today_record.get('clock_out'):
-            is_clocked_in = True
-            last_check_in = today_record.get('clock_in')
+        if today_record:
+            # Look at the latest segment in 'logs' if it exists
+            logs = today_record.get('logs', [])
+            if logs:
+                latest_log = logs[-1]
+                if latest_log.get('clock_in') and not latest_log.get('clock_out'):
+                    is_clocked_in = True
+                    last_check_in = latest_log.get('clock_in')
+            elif today_record.get('clock_in') and not today_record.get('clock_out'):
+                # Fallback for old record format
+                is_clocked_in = True
+                last_check_in = today_record.get('clock_in')
             
         return JsonResponse({
             'is_clocked_in': is_clocked_in,
@@ -156,61 +155,78 @@ def get_user_attendance_status(request):
         })
             
     except Exception as e:
-        print(f"Error in get_user_attendance_status: {e}")
         return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@require_user_id # Use the simple decorator
+@require_user_id
 def clock_in(request):
     """
     Clock in the authenticated employee.
     Endpoint: POST /api/attendance/clock-in/
-    Requires Auth: Yes (via middleware attaching user_id)
     """
     try:
-        employee_id_str = request.user_id # Get ID from middleware
+        employee_id_str = request.employee_id
+        if not employee_id_str:
+            return JsonResponse({'error': 'Not linked', 'message': 'User is not linked to an employee profile'}, status=400)
         
-        employee_id = ObjectId(employee_id_str)
+        employee_id = employee_id_str
             
         # Get current date and time
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         today = now.date().isoformat()
         
-        # Check if already clocked in today
+        # Check for today's record
         existing_record = attendance.find_one({
-            'employee_id': employee_id,
+            'employee_id': ObjectId(employee_id),
             'date': today
         })
         
-        if existing_record and existing_record.get('clock_in') and not existing_record.get('clock_out'):
+        # Check if currently clocked in
+        currently_in = False
+        if existing_record:
+            logs = existing_record.get('logs', [])
+            if logs:
+                if logs[-1].get('clock_in') and not logs[-1].get('clock_out'):
+                    currently_in = True
+            elif existing_record.get('clock_in') and not existing_record.get('clock_out'):
+                currently_in = True
+
+        if currently_in:
             return JsonResponse({
                 'error': 'Already clocked in',
-                'message': 'You have already clocked in today'
+                'message': 'You have already clocked in and not yet clocked out.'
             }, status=400)
         
+        # New log entry
+        new_segment = {
+            'clock_in': now.isoformat(),
+            'clock_out': None
+        }
+
         # Create or update attendance record
         if existing_record:
-            # Update existing record (e.g., if they clocked out and are clocking back in on the same day)
+            # Add new segment to logs
             attendance.update_one(
                 {'_id': existing_record['_id']},
-                {'$set': {
-                    'clock_in': now.isoformat(),
-                    'status': 'present',
-                    'clock_out': None, # Ensure clock_out is nullified if re-clocking in
-                    'total_hours': existing_record.get('total_hours', 0), # Keep previous hours if re-clocking in
-                    'updated_at': now.isoformat()
-                }}
+                {
+                    '$push': {'logs': new_segment},
+                    '$set': {
+                        'clock_out': None, # Ensure top-level is 'in'
+                        'updated_at': now.isoformat()
+                    }
+                }
             )
             record_id = str(existing_record['_id'])
         else:
-            # Create new record
             new_record = {
-                'employee_id': employee_id,
+                'employee_id': ObjectId(employee_id),
                 'date': today,
-                'clock_in': now.isoformat(),
+                'clock_in': now.isoformat(), # First clock-in of the day
+                'clock_out': None,
                 'status': 'present',
-                'total_hours': 0,
+                'total_hours': 0.0,
+                'logs': [new_segment],
                 'created_at': now.isoformat(),
                 'updated_at': now.isoformat()
             }
@@ -224,53 +240,72 @@ def clock_in(request):
         }, status=200)
         
     except Exception as e:
-        print(f"Error in clock_in: {e}")
         return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@require_user_id # Use the simple decorator
+@require_user_id
 def clock_out(request):
     """
     Clock out the authenticated employee.
     Endpoint: POST /api/attendance/clock-out/
-    Requires Auth: Yes (via middleware attaching user_id)
     """
     try:
-        employee_id_str = request.user_id # Get ID from middleware
+        employee_id_str = request.employee_id
+        if not employee_id_str:
+            return JsonResponse({'error': 'Not linked', 'message': 'User is not linked to an employee profile'}, status=400)
+            
+        employee_id = employee_id_str
         
-        employee_id = ObjectId(employee_id_str)
-        
-        # Get current date and time
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         today = now.date().isoformat()
         
-        # Find the latest clock-in record for today that hasn't been clocked out
+        # Find today's record
         existing_record = attendance.find_one({
-            'employee_id': employee_id,
-            'date': today,
-            'clock_in': {'$ne': None},
-            'clock_out': None 
+            'employee_id': ObjectId(employee_id),
+            'date': today
         })
-        
+
         if not existing_record:
+            return JsonResponse({'error': 'Not clocked in', 'message': 'No attendance record found for today.'}, status=400)
+
+        logs = existing_record.get('logs', [])
+        
+        # Find the segment to close
+        segment_index = -1
+        if logs:
+            # Check the last segment
+            if logs[-1].get('clock_in') and not logs[-1].get('clock_out'):
+                segment_index = len(logs) - 1
+        elif existing_record.get('clock_in') and not existing_record.get('clock_out'):
+            # Legacy format - migrate to logs and close
+            logs = [{'clock_in': existing_record['clock_in'], 'clock_out': None}]
+            segment_index = 0
+
+        if segment_index == -1:
             return JsonResponse({
                 'error': 'Not clocked in',
-                'message': 'You are not currently clocked in for today'
+                'message': 'You are not currently clocked in or already clocked out.'
             }, status=400)
             
-        # Calculate total hours for this segment
-        clock_in_time = datetime.datetime.fromisoformat(existing_record['clock_in'])
-        hours_this_segment = (now - clock_in_time).total_seconds() / 3600
+        # Update logs segment
+        logs[segment_index]['clock_out'] = now.isoformat()
         
-        # Get previous total hours if re-clocking in/out on the same day
-        previous_total_hours = existing_record.get('total_hours', 0)
-        current_total_hours = previous_total_hours + hours_this_segment
+        # Recalculate total hours based on all segments
+        total_seconds = 0
+        for log in logs:
+            if log.get('clock_in') and log.get('clock_out'):
+                c_in = datetime.datetime.fromisoformat(log['clock_in'])
+                c_out = datetime.datetime.fromisoformat(log['clock_out'])
+                total_seconds += (c_out - c_in).total_seconds()
+        
+        current_total_hours = total_seconds / 3600
 
         # Update attendance record
         attendance.update_one(
             {'_id': existing_record['_id']},
             {'$set': {
+                'logs': logs,
                 'clock_out': now.isoformat(),
                 'total_hours': round(current_total_hours, 2),
                 'updated_at': now.isoformat()
@@ -285,43 +320,24 @@ def clock_out(request):
         }, status=200)
         
     except Exception as e:
-        print(f"Error in clock_out: {e}")
         return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET"])
-@require_user_id # Use the simple decorator
+@require_user_id
 def get_my_attendance(request):
     """
     Get attendance records for the authenticated user.
     Endpoint: GET /api/attendance/me/
-    Requires Auth: Yes (via middleware attaching user_id)
     """
     try:
-        employee_id_str = request.user_id # Get ID from middleware
-        
-        # Debug logging - add this
-        print(f"Getting attendance history for user_id: {employee_id_str}")
-        
-        # Check if employee exists in database first
-        employee = employees.find_one({"_id": ObjectId(employee_id_str)})
-        if not employee:
-            # For development, create a mock response
-            print(f"Warning: Employee with ID {employee_id_str} not found, returning mock data")
-            return JsonResponse({
-                'results': [],
-                'count': 0,
-                'page': 1,
-                'limit': 10,
-                'pages': 0,
-                'has_next': False,
-                'has_prev': False,
-                'debug_info': f"Employee ID {employee_id_str} not found"
-            })
+        employee_id_str = request.employee_id
+        if not employee_id_str:
+            return JsonResponse({'results': [], 'count': 0})
 
-        employee_id = ObjectId(employee_id_str)
+        employee_id = employee_id_str
 
-        # Parse query parameters (start_date, end_date, etc.)
+        # Parse query parameters
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         status = request.GET.get('status')
@@ -330,7 +346,7 @@ def get_my_attendance(request):
         skip = (page - 1) * limit
 
         # Build query filter
-        query_filter = {'employee_id': employee_id}
+        query_filter = {'employee_id': ObjectId(employee_id)}
         
         if start_date and end_date:
             query_filter['date'] = {'$gte': start_date, '$lte': end_date}
@@ -365,7 +381,6 @@ def get_my_attendance(request):
         })
 
     except Exception as e:
-        print(f"Error in get_my_attendance: {e}")
         return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt

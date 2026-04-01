@@ -21,6 +21,7 @@ from utils.api_utils import (
     create_crud_endpoints,
     validate_required_fields
 )
+from utils.auth_utils import require_role, require_self_or_role
 
 # Define required fields for employee creation
 EMPLOYEE_REQUIRED_FIELDS = ['first_name', 'last_name', 'email', 'employee_id']
@@ -300,6 +301,7 @@ def get_employee(request, employee_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role(['Admin', 'Manager'])
 def create_employee(request):
     """
     Creates a new employee record.
@@ -428,6 +430,7 @@ def create_employee(request):
 
 @csrf_exempt
 @require_http_methods(["PUT"])
+@require_self_or_role(['Admin', 'Manager'])
 def update_employee(request, employee_id):
     """
     Updates an employee record (full update).
@@ -459,6 +462,7 @@ def update_employee(request, employee_id):
 
 @csrf_exempt
 @require_http_methods(["PATCH"])
+@require_self_or_role(['Admin', 'Manager'])
 def partial_update_employee(request, employee_id):
     """
     Updates an employee record (partial update).
@@ -490,6 +494,7 @@ def partial_update_employee(request, employee_id):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@require_role(['Admin'])
 def delete_employee(request, employee_id):
     """
     Deletes an employee record.
@@ -869,6 +874,7 @@ def get_department(request, department_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_role(['Admin', 'Manager'])
 def create_department(request):
     """
     Creates a new department.
@@ -901,6 +907,7 @@ def create_department(request):
 
 @csrf_exempt
 @require_http_methods(["PUT"])
+@require_role(['Admin', 'Manager'])
 def update_department(request, department_id):
     """
     Updates a department (full update).
@@ -928,6 +935,7 @@ def update_department(request, department_id):
 
 @csrf_exempt
 @require_http_methods(["PATCH"])
+@require_role(['Admin', 'Manager'])
 def partial_update_department(request, department_id):
     """
     Updates a department (partial update).
@@ -955,6 +963,7 @@ def partial_update_department(request, department_id):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@require_role(['Admin'])
 def delete_department(request, department_id):
     """
     Deletes a department.

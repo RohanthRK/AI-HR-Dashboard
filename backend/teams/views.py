@@ -17,6 +17,7 @@ from django.http import JsonResponse
 from datetime import datetime
 import traceback
 from utils.api_utils import serialize_document
+from utils.auth_utils import require_role, require_team_leader_or_role
 
 @api_view(['GET'])
 def debug_teams(request):
@@ -102,6 +103,7 @@ class TeamViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['POST'])
+@require_role(['Admin', 'Manager'])
 def mongodb_create(request):
     """
     Create a team in MongoDB with department and employee data
@@ -228,6 +230,7 @@ def mongodb_create(request):
 
 
 @api_view(['PUT'])
+@require_team_leader_or_role(['Admin', 'Manager'])
 def mongodb_update(request, pk=None):
     """
     Update a team in MongoDB with department and employee data

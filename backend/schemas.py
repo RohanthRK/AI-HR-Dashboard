@@ -113,6 +113,7 @@ attendance_schema = {
     "clock_out": str,  # ISO format datetime
     "total_hours": float,
     "status": str,  # Present, Absent, Late, Half-day
+    "logs": list,  # List of {clock_in, clock_out} segments
     "location": str,
     "ip_address": str,
     "notes": str,
