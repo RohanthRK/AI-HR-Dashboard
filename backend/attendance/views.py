@@ -128,7 +128,7 @@ def get_user_attendance_status(request):
         
         # Check for today's record
         today_record = attendance.find_one({
-            'employee_id': ObjectId(employee_id),
+            'employee_id': employee_id, # Use string ID directly
             'date': today
         })
         
@@ -178,7 +178,7 @@ def clock_in(request):
         
         # Check for today's record
         existing_record = attendance.find_one({
-            'employee_id': ObjectId(employee_id),
+            'employee_id': employee_id, # Use string ID directly
             'date': today
         })
         
@@ -191,7 +191,7 @@ def clock_in(request):
                     currently_in = True
             elif existing_record.get('clock_in') and not existing_record.get('clock_out'):
                 currently_in = True
-
+        
         if currently_in:
             return JsonResponse({
                 'error': 'Already clocked in',
@@ -220,7 +220,7 @@ def clock_in(request):
             record_id = str(existing_record['_id'])
         else:
             new_record = {
-                'employee_id': ObjectId(employee_id),
+                'employee_id': employee_id, # Use string ID directly
                 'date': today,
                 'clock_in': now.isoformat(), # First clock-in of the day
                 'clock_out': None,
@@ -262,7 +262,7 @@ def clock_out(request):
         
         # Find today's record
         existing_record = attendance.find_one({
-            'employee_id': ObjectId(employee_id),
+            'employee_id': employee_id, # Use string ID directly
             'date': today
         })
 
@@ -346,7 +346,8 @@ def get_my_attendance(request):
         skip = (page - 1) * limit
 
         # Build query filter
-        query_filter = {'employee_id': ObjectId(employee_id)}
+        # Supports both legacy ObjectId strings and newer business codes (EMP001)
+        query_filter = {'employee_id': employee_id}
         
         if start_date and end_date:
             query_filter['date'] = {'$gte': start_date, '$lte': end_date}
@@ -394,13 +395,19 @@ def employee_attendance(request, employee_id):
     # TODO: Add permission check (Admin/HR only)
     try:
         # Check if employee exists
-        try:
-            emp_obj_id = ObjectId(employee_id)
-            employee = employees.find_one({'_id': emp_obj_id})
-            if not employee:
-                return JsonResponse({'error': 'Not found', 'message': f'Employee with ID {employee_id} not found'}, status=404)
-        except Exception:
-             return JsonResponse({'error': 'Invalid ID', 'message': f'Invalid employee ID format: {employee_id}'}, status=400)
+        # Supports lookup by either internal _id (if provided) or business employee_id
+        employee = None
+        if len(employee_id) == 24: # Potential ObjectId hex string
+            try:
+                employee = employees.find_one({'_id': ObjectId(employee_id)})
+            except:
+                pass
+        
+        if not employee:
+            employee = employees.find_one({'employee_id': employee_id})
+            
+        if not employee:
+            return JsonResponse({'error': 'Not found', 'message': f'Employee with ID {employee_id} not found'}, status=404)
 
         # Parse query parameters
         start_date = request.GET.get('start_date')
@@ -411,7 +418,8 @@ def employee_attendance(request, employee_id):
         skip = (page - 1) * limit
         
         # Build query filter
-        query_filter = {'employee_id': emp_obj_id}
+        # Note: In attendance collection, we query by the same employee_id string/internal_id that was used during clock-in
+        query_filter = {'employee_id': employee_id}
         
         if start_date and end_date:
             query_filter['date'] = {'$gte': start_date, '$lte': end_date}
@@ -471,7 +479,17 @@ def get_attendance_summary(request, employee_id):
     # TODO: Add permission check (Admin/HR or employee self)
     try:
         # Check if employee exists
-        employee = employees.find_one({'_id': ObjectId(employee_id)})
+        # Supports lookup by either internal _id (if provided) or business employee_id
+        employee = None
+        if len(employee_id) == 24: # Potential ObjectId hex string
+            try:
+                employee = employees.find_one({'_id': ObjectId(employee_id)})
+            except:
+                pass
+        
+        if not employee:
+            employee = employees.find_one({'employee_id': employee_id})
+            
         if not employee:
             return JsonResponse({
                 'error': 'Not found',
@@ -492,8 +510,9 @@ def get_attendance_summary(request, employee_id):
         month_end = (datetime.date(next_year, next_month, 1) - datetime.timedelta(days=1)).isoformat()
         
         # Get attendance records for current month
+        # Use simple string identifier as stored in the collection
         monthly_records = list(attendance.find({
-            'employee_id': ObjectId(employee_id),
+            'employee_id': employee_id,
             'date': {'$gte': month_start, '$lte': month_end}
         }))
         
@@ -510,7 +529,7 @@ def get_attendance_summary(request, employee_id):
         # Get today's record if exists
         today = now.date().isoformat()
         today_record = attendance.find_one({
-            'employee_id': ObjectId(employee_id),
+            'employee_id': employee_id,
             'date': today
         })
         
@@ -559,7 +578,17 @@ def get_monthly_report(request, employee_id, year, month):
     # TODO: Add permission check (Admin/HR or employee self)
     try:
         # Check if employee exists
-        employee = employees.find_one({'_id': ObjectId(employee_id)})
+        # Supports lookup by either internal _id (if provided) or business employee_id
+        employee = None
+        if len(employee_id) == 24: # Potential ObjectId hex string
+            try:
+                employee = employees.find_one({'_id': ObjectId(employee_id)})
+            except:
+                pass
+        
+        if not employee:
+            employee = employees.find_one({'employee_id': employee_id})
+
         if not employee:
             return JsonResponse({
                 'error': 'Not found',
@@ -584,7 +613,7 @@ def get_monthly_report(request, employee_id, year, month):
         
         # Get attendance records for the month
         monthly_records = list(attendance.find({
-            'employee_id': ObjectId(employee_id),
+            'employee_id': employee_id,
             'date': {'$gte': month_start, '$lte': month_end}
         }).sort('date', 1))
         

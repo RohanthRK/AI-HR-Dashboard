@@ -125,7 +125,9 @@ attendance_schema = {
 # Leave schema
 leave_schema = {
     "employee_id": str,  # ObjectId as string
-    "leave_type": str,  # Annual, Sick, Personal, Maternity, etc
+    "leave_type": str,  # Earned Leaves, LOP Leaves
+    "is_half_day": bool,
+    "half_day_segment": str,  # First Half, Second Half, null
     "start_date": str,  # ISO format date
     "end_date": str,  # ISO format date
     "total_days": float,
