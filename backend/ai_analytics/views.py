@@ -765,26 +765,34 @@ class TeamStatsView(APIView):
     
     def get(self, request):
         try:
-            # Get all departments
-            all_departments = list(departments_collection.find())
-            
-            # Get all teams
+            # Get all teams first
             all_teams = list(teams.find())
             
             # Get all employees
             all_employees = list(employees_collection.find())
             
-            # Organize departments with team and employee counts
+            # Get all formally registered departments
+            all_departments = list(departments_collection.find())
+            
+            # Identify all unique department names from teams to ensure no orphans are lost
+            team_dep_names = set(t.get("department") for t in all_teams if t.get("department"))
+            formal_dep_names = set(d.get("name") for d in all_departments if d.get("name"))
+            
+            # We want to iterate over all formal departments + any extra ones found in teams
+            all_dep_names = sorted(list(formal_dep_names.union(team_dep_names)))
+            
             departments_data = []
-            for dept in all_departments:
-                dept_id = dept["_id"]
-                dept_name = dept.get("name", "Unknown")
+            
+            for dept_name in all_dep_names:
+                # Find formal department info if it exists
+                formal_dept = next((d for d in all_departments if d.get("name") == dept_name), None)
+                dept_id = str(formal_dept["_id"]) if formal_dept else dept_name
                 
                 # Get teams in this department
-                dept_teams = [t for t in all_teams if str(t.get("department_id", "")) == str(dept_id) or t.get("department") == dept_name]
+                dept_teams = [t for t in all_teams if t.get("department") == dept_name or str(t.get("department_id", "")) == str(dept_id)]
                 
-                # Get employees directly in this department
-                dept_employees = [e for e in all_employees if str(e.get("department_id", "")) == str(dept_id) or e.get("department") == dept_name]
+                # Get employees in this department
+                dept_employees = [e for e in all_employees if e.get("department") == dept_name or str(e.get("department_id", "")) == str(dept_id)]
                 
                 # Get team data for this department
                 teams_data = []
@@ -816,6 +824,7 @@ class TeamStatsView(APIView):
                 departments_data.append({
                     "id": str(dept_id),
                     "name": dept_name,
+                    "description": formal_dept.get("description", f"{dept_name} department") if formal_dept else f"{dept_name} department",
                     "employee_count": len(dept_employees),
                     "team_count": len(dept_teams),
                     "teams": teams_data
@@ -824,7 +833,7 @@ class TeamStatsView(APIView):
             # Return the statistics
             return Response({
                 "departments": departments_data,
-                "total_departments": len(all_departments),
+                "total_departments": len(all_dep_names),
                 "total_teams": len(all_teams),
                 "total_employees": len(all_employees)
             })
@@ -899,6 +908,19 @@ class TeamReviewsView(APIView):
             # Add created_at and updated_at timestamps
             review_data['created_at'] = timezone.now().isoformat()
             review_data['updated_at'] = timezone.now().isoformat()
+            review_data['status'] = 'Completed'
+            
+            # Set reviewer info from auth with fallback
+            reviewer_id = getattr(request, 'employee_id', None)
+            reviewer_name = getattr(request, 'user_info', {}).get('username', 'System')
+            
+            if not reviewer_id and hasattr(request, 'user_id'):
+                emp_doc = employees_collection.find_one({'user_id': request.user_id})
+                if emp_doc:
+                    reviewer_id = emp_doc.get('employee_id') or str(emp_doc['_id'])
+            
+            review_data['reviewer_id'] = reviewer_id
+            review_data['reviewer_name'] = reviewer_name
             
             # Create the review
             result = team_reviews.insert_one(review_data)

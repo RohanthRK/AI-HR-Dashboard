@@ -43,4 +43,4 @@ urlpatterns = [
     path('team-stats/', TeamStatsView.as_view(), name='team-stats'),
     path('team-reviews/', TeamReviewsView.as_view(), name='team-reviews'),
     path('team-reviews/<str:team_id>/', TeamReviewDetailView.as_view(), name='team-review-detail'),
-] 
+]

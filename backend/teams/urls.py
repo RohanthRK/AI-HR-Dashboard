@@ -11,4 +11,4 @@ urlpatterns = [
     path('teams/mongodb_create/', mongodb_create, name='mongodb_create_team'),
     path('teams/<str:pk>/mongodb_update/', mongodb_update, name='mongodb_update_team'),
     path('', include(router.urls)),
-] 
+]

@@ -3,9 +3,9 @@ from . import views
 
 urlpatterns = [
     path('jobs/', views.handle_kanban_jobs, name='handle_kanban_jobs'),
-    path('jobs/<str:job_id>/candidates', views.handle_kanban_candidates, name='handle_kanban_candidates'),
-    path('candidates', views.handle_kanban_candidates, name='handle_all_candidates'),
-    path('candidates/<str:candidate_id>/stage', views.update_candidate_stage, name='update_candidate_stage'),
+    path('jobs/<str:job_id>/candidates/', views.handle_kanban_candidates, name='handle_kanban_candidates'),
+    path('candidates/', views.handle_kanban_candidates, name='handle_all_candidates'),
+    path('candidates/<str:candidate_id>/stage/', views.update_candidate_stage, name='update_candidate_stage'),
 
     # AI Feature Routes
     path('jobs/placeholder/', views.list_jobs, name='list_jobs'),
