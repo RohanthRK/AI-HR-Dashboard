@@ -13,11 +13,30 @@ collection = db.objectives
 
 @csrf_exempt
 def get_objectives(request):
+    """
+    GET: List objectives (Filtered by user unless Admin)
+    """
+    # Extract user info from request (attached by JWTAuthMiddleware)
+    user_id = getattr(request, 'user_id', None)
+    employee_id = getattr(request, 'employee_id', None)
+    user_role = getattr(request, 'role', '').lower()
+
     if request.method == 'GET':
-        employee_id = request.GET.get('employee_id')
+        requested_id = request.GET.get('employee_id')
         query = {}
-        if employee_id:
-            query['employee_id'] = employee_id
+
+        if user_role != 'admin':
+            # Privacy filter: Non-admins MUST only see their own objectives
+            # Even if they try to request another ID, we force their own
+            effective_id = employee_id or user_id
+            if effective_id:
+                query['employee_id'] = effective_id
+            else:
+                return JsonResponse({'status': 'success', 'data': []})
+        else:
+            # Admins can filter by employee_id if provided
+            if requested_id:
+                query['employee_id'] = requested_id
 
         objectives = list(collection.find(query))
         

@@ -11,11 +11,27 @@ expenses_collection = db["expenses"]
 @csrf_exempt
 def handle_expenses(request):
     """
-    GET: List all expenses
+    GET: List all expenses (Filtered by user unless Admin)
     POST: Create a new expense claim
     """
+    # Extract user info from request (attached by JWTAuthMiddleware)
+    user_id = getattr(request, 'user_id', None)
+    employee_id = getattr(request, 'employee_id', None)
+    user_role = getattr(request, 'role', '').lower()
+
     if request.method == 'GET':
-        expenses = list(expenses_collection.find({}))
+        query = {}
+        # Privacy filter: Only Admins can see all expenses
+        if user_role != 'admin':
+            if employee_id:
+                query['employee_id'] = employee_id
+            elif user_id:
+                query['user_id'] = user_id
+            else:
+                # If no ID, return empty to be safe
+                return JsonResponse({'success': True, 'expenses': []})
+
+        expenses = list(expenses_collection.find(query))
         # Convert ObjectId to string
         for exp in expenses:
             exp['_id'] = str(exp['_id'])
@@ -24,6 +40,12 @@ def handle_expenses(request):
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            # Automatic ownership tagging
+            if employee_id:
+                data['employee_id'] = employee_id
+            if user_id:
+                data['user_id'] = user_id
+                
             # Default status
             data['status'] = data.get('status', 'Pending')
             data['submittedAt'] = datetime.utcnow().isoformat()
