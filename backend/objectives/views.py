@@ -26,17 +26,30 @@ def get_objectives(request):
         query = {}
 
         if user_role != 'admin':
-            # Privacy filter: Non-admins MUST only see their own objectives
-            # Even if they try to request another ID, we force their own
-            effective_id = employee_id or user_id
-            if effective_id:
-                query['employee_id'] = effective_id
-            else:
-                return JsonResponse({'status': 'success', 'data': []})
+            # Privacy and Scope Filter
+            scope = request.GET.get('scope', 'individual')
+            
+            if scope == 'individual':
+                query['employee_id'] = employee_id or user_id
+            elif scope == 'team':
+                team_id = request.GET.get('team_id')
+                if team_id:
+                    query['team_id'] = team_id
+                    query['scope'] = 'team'
+                else:
+                    return JsonResponse({'status': 'success', 'data': []})
+            elif scope == 'department':
+                dept_id = request.GET.get('department_id')
+                if dept_id:
+                    query['department_id'] = dept_id
+                    query['scope'] = 'department'
+                else:
+                    return JsonResponse({'status': 'success', 'data': []})
         else:
-            # Admins can filter by employee_id if provided
-            if requested_id:
-                query['employee_id'] = requested_id
+            # Admins can filter by anything
+            for param in ['employee_id', 'team_id', 'department_id', 'scope']:
+                val = request.GET.get(param)
+                if val: query[param] = val
 
         objectives = list(collection.find(query))
         
@@ -50,25 +63,47 @@ def get_objectives(request):
 
 @csrf_exempt
 def create_objective(request):
+    """
+    POST: Create a new objective
+    """
+    # Extract user info
+    user_id = getattr(request, 'user_id', None)
+    employee_id_auth = getattr(request, 'employee_id', None)
+    user_role = getattr(request, 'role', '').lower()
+
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             
+            # Security: Non-admins can only create for themselves
+            target_employee_id = data.get('employee_id')
+            if user_role != 'admin':
+                if not employee_id_auth:
+                    return JsonResponse({'status': 'error', 'message': 'Account not linked to an employee profile'}, status=403)
+                target_employee_id = employee_id_auth
+
             # Validate required fields
-            required_fields = ['title', 'employee_id']
-            if not all(field in data for field in required_fields):
+            if not data.get('title') or not target_employee_id:
                 return JsonResponse({
                     'status': 'error', 
-                    'message': 'Missing required fields'
+                    'message': 'Title and Employee ID are required'
                 }, status=400)
                 
+            # Security for Scoped OKRs
+            scope = data.get('scope', 'individual')
+            if scope in ['team', 'department'] and user_role not in ['admin', 'manager', 'hr']:
+                return JsonResponse({'status': 'error', 'message': f'Unauthorized to create {scope} OKRs'}, status=403)
+
             new_objective = {
                 'title': data.get('title'),
                 'description': data.get('description', ''),
-                'employee_id': data.get('employee_id'),
+                'employee_id': target_employee_id,
+                'team_id': data.get('team_id', ''),
+                'department_id': data.get('department_id', ''),
+                'scope': scope,
                 'target_date': data.get('target_date', ''),
                 'progress': 0,
-                'status': 'On Track',
+                'status': data.get('status', 'On Track'),
                 'key_results': data.get('key_results', []),
                 'created_at': datetime.utcnow().isoformat(),
                 'updated_at': datetime.utcnow().isoformat()

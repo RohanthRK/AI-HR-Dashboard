@@ -57,3 +57,16 @@ dist/
 .vscode/
 *.swp
 *.swo
+
+# Debug and Temporary Scripts
+backend/debug_*.txt
+backend/debug_*.py
+backend/fix_*.py
+backend/test_*.py
+backend/verify_*.py
+backend/check_*.py
+backend/approve_*.py
+backend/*_results.txt
+backend/seed_performance.py
+backend/scripts/
+Skills.txt

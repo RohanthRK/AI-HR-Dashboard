@@ -190,18 +190,15 @@ def get_leave_requests(request, status=None):
             
         # 1. ENFORCE PERSONAL FILTERING IF 'me' PARAM IS PRESENT
         if is_personal or (not employee_id and not status and request.role != 'Employee'):
-            # If explicit 'me' OR it's a default GET /api/leaves/ for a privileged user
-            # We must resolve to their own employee_id for the history section
-            curr_user = users_collection.find_one({"_id": ObjectId(request.user_id)})
-            query_filter['employee_id'] = curr_user.get('employee_id') if curr_user else 'UNKNOWN'
+            # Use employee_id from JWT payload (fast)
+            query_filter['employee_id'] = str(request.employee_id) if request.employee_id else 'UNKNOWN'
             
         # 2. OTHERWISE, APPLY ROLE-BASED FILTERING
         elif employee_id:
             query_filter['employee_id'] = employee_id # String ID like EMP001
         elif request.role == 'Employee':
             # Basic fallback for regular employees
-            curr_user = users_collection.find_one({"_id": ObjectId(request.user_id)})
-            query_filter['employee_id'] = curr_user.get('employee_id') if curr_user else 'UNKNOWN'
+            query_filter['employee_id'] = str(request.employee_id) if request.employee_id else 'UNKNOWN'
         elif request.role == 'Manager':
             # Managers should see requests from their team members
             curr_user_id_str = str(request.user_id)
@@ -263,7 +260,7 @@ def get_leave(request, leave_id):
             }, status=404)
             
         # Check permissions
-        if request.role == 'Employee' and str(leave['employee_id']) != request.user_id:
+        if request.role == 'Employee' and str(leave['employee_id']) != str(request.employee_id):
             return JsonResponse({
                 'error': 'Permission denied',
                 'message': 'You can only view your own leave requests'
@@ -533,7 +530,7 @@ def cancel_leave(request, leave_id):
             }, status=404)
             
         # Check permissions
-        if request.role == 'Employee' and str(leave['employee_id']) != request.user_id:
+        if request.role == 'Employee' and str(leave['employee_id']) != str(request.employee_id):
             return JsonResponse({
                 'error': 'Permission denied',
                 'message': 'You can only cancel your own leave requests'

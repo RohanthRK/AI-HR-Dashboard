@@ -273,31 +273,90 @@ def list_employees(request):
 @require_http_methods(["GET"])
 def get_employee(request, employee_id):
     """
-    Retrieves a single employee by ID.
+    Retrieves a single employee by ID and enhances with manager/team context.
     
     Endpoint: GET /api/employees/{employee_id}/
-    
-    Path Parameters:
-        - employee_id: The unique identifier of the employee
-    
-    Response:
-        {
-            "_id": employee_id,
-            "first_name": string,
-            "last_name": string,
-            "email": string,
-            "employee_id": string,
-            "department": string,
-            "department_id": string,
-            "position": string,
-            ... additional employee fields
-        }
-    
-    Error Responses:
-        - 404: Employee not found
-        - 500: Server error
     """
-    return employee_crud['get_item'](request, employee_id)
+    try:
+        # Try both string ID and ObjectId
+        query = {'_id': employee_id}
+        employee = employees.find_one(query)
+        if not employee:
+            try:
+                query = {'_id': ObjectId(employee_id)}
+                employee = employees.find_one(query)
+            except:
+                pass
+                
+        if not employee:
+            # Try searching by employee_id field (e.g. EMP001)
+            employee = employees.find_one({'employee_id': employee_id})
+            
+        if not employee:
+            return JsonResponse({
+                'error': 'Not found',
+                'message': f'Employee with ID {employee_id} not found'
+            }, status=404)
+            
+        # Serialize base document
+        response_data = serialize_document(employee)
+        
+        # 1. ENHANCE: Add Reporting Manager details
+        manager_id = employee.get('manager_id')
+        if manager_id:
+            try:
+                # Find manager (could be ObjectId or string)
+                manager_obj_id = manager_id if isinstance(manager_id, ObjectId) else (ObjectId(manager_id) if len(str(manager_id)) == 24 else None)
+                m_query = {'_id': manager_obj_id} if manager_obj_id else {'employee_id': manager_id}
+                manager = employees.find_one(m_query)
+                if manager:
+                    response_data['manager_name'] = f"{manager.get('first_name', '')} {manager.get('last_name', '')}".strip()
+                    response_data['manager_id_str'] = str(manager['_id'])
+            except:
+                pass
+        
+        # 2. ENHANCE: Add Reporting Team (Direct Reports)
+        current_emp_id = str(employee['_id'])
+        current_physical_id = employee.get('employee_id')
+        
+        # Reports can be linked via physical employee_id OR MongoDB _id
+        reports_query = {
+            '$or': [
+                {'manager_id': current_emp_id},
+                {'manager_id': current_physical_id}
+            ]
+        }
+        
+        direct_reports_cursor = employees.find(reports_query).limit(50) # Limit for profile view
+        direct_reports = []
+        for dr in direct_reports_cursor:
+            direct_reports.append({
+                'id': str(dr['_id']),
+                'name': f"{dr.get('first_name', '')} {dr.get('last_name', '')}".strip(),
+                'position': dr.get('position', 'Employee'),
+                'avatar': dr.get('profile_image', ''),
+                'initials': f"{dr.get('first_name', 'E')[0]}{dr.get('last_name', 'P')[0]}".upper()
+            })
+            
+        response_data['reporting_team'] = direct_reports
+        response_data['reporting_team_count'] = employees.count_documents(reports_query)
+        
+        # Ensure emergency contact has proper structure - but keep data dynamic
+        ec = employee.get('emergency_contact', {})
+        if isinstance(ec, dict):
+            response_data['emergency_contact_name'] = ec.get('name', '')
+            response_data['emergency_contact_relationship'] = ec.get('relationship', '')
+            response_data['emergency_contact_phone'] = ec.get('phone', '')
+            response_data['personal_email'] = ec.get('personal_email', '')
+            
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        print(f"ERROR in get_employee view: {str(e)}")
+        return JsonResponse({
+            'error': 'Server error',
+            'message': str(e)
+        }, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -1352,8 +1411,21 @@ def list_departments_mongodb(request):
         # Get paginated results
         results = list(cursor.skip(skip).limit(limit))
         
-        # Serialize results
-        serialized_results = [serialize_document(doc) for doc in results]
+        # Serialize results and attach teams
+        serialized_results = []
+        for doc in results:
+            dept_data = serialize_document(doc)
+            dept_name = doc.get('name')
+            if dept_name:
+                # Find teams belonging to this department (searching both name and ID for consistency)
+                dept_teams = list(teams_collection.find({
+                    '$or': [
+                        {'department': dept_name},
+                        {'department_id': dept_name}
+                    ]
+                }))
+                dept_data['teams'] = [serialize_document(t) for t in dept_teams]
+            serialized_results.append(dept_data)
         
         # Calculate pagination metadata
         total_pages = (total_count + limit - 1) // limit  # Ceiling division

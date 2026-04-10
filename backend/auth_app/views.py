@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.hashers import check_password, make_password
 
-from hr_backend.db import users, roles
+from hr_backend.db import users, roles, employees
 
 def hash_password(password):
     """Hash a password using Django's password hasher"""
@@ -94,12 +94,25 @@ def login(request):
             if role_doc:
                 role_name = role_doc.get('name', 'Employee')
         
+        # Get employee additional details
+        employee_data = {}
+        if user.get('employee_id'):
+            emp_doc = employees.find_one({'employee_id': user['employee_id']})
+            if emp_doc:
+                employee_data = {
+                    'first_name': emp_doc.get('first_name', ''),
+                    'last_name': emp_doc.get('last_name', ''),
+                    'department': emp_doc.get('department', ''),
+                    'team': emp_doc.get('team', '')
+                }
+        
         payload = {
             'user_id': str(user['_id']),
             'username': user['username'],
             'role': role_name,
             'employee_id': user.get('employee_id', ''),
-            'exp': expiry
+            'exp': expiry,
+            **employee_data
         }
         
         token = jwt.encode(
@@ -117,7 +130,8 @@ def login(request):
                 'role': role_name,
                 'email': user.get('email', ''),
                 'employee_id': user.get('employee_id', ''),
-                'expires': expiry.isoformat()
+                'expires': expiry.isoformat(),
+                **employee_data
             }
         })
         
@@ -316,9 +330,16 @@ def delete_role(request, role_id):
 @require_http_methods(["POST"])
 def register(request):
     """
-    Register a new user
+    Register a new user (Restricted to Admin)
     Endpoint: POST /api/auth/register
     """
+    # Security: Only Admin can create new users
+    if getattr(request, 'role', '').lower() != 'admin':
+        return JsonResponse({
+            'error': 'Forbidden',
+            'message': 'Only administrators can create new user credentials'
+        }, status=403)
+
     try:
         # Parse JSON data
         data = json.loads(request.body)
@@ -335,25 +356,30 @@ def register(request):
             }, status=400)
             
         # Check if username already exists
-        existing_user = users.find_one({'username': username})
-        if existing_user:
+        if users.find_one({'username': username}):
             return JsonResponse({
-                'error': 'Username taken',
+                'error': 'Conflict',
                 'message': 'Username already exists'
             }, status=409)
             
-        # Validate role ID if provided
-        if role_id:
-            role = roles.find_one({'_id': ObjectId(role_id)})
-            if not role:
-                return JsonResponse({
-                    'error': 'Invalid role',
-                    'message': f'Role with ID {role_id} not found'
-                }, status=400)
-        else:
+        # Validate role ID
+        if not role_id:
             # Default to Employee role
-            default_role = roles.find_one({'name': 'Employee'})
-            role_id = str(default_role['_id']) if default_role else None
+            role_doc = roles.find_one({'name': 'Employee'})
+            role_id = str(role_doc['_id']) if role_doc else None
+        
+        if role_id:
+            try:
+                role = roles.find_one({'_id': ObjectId(role_id)})
+                if not role:
+                    return JsonResponse({
+                        'error': 'Invalid role',
+                        'message': f'Role with ID {role_id} not found'
+                    }, status=400)
+            except:
+                return JsonResponse({'error': 'Invalid ID', 'message': 'Invalid role ID format'}, status=400)
+
+        employee_id = data.get('employee_id') # New linkage field
             
         # Create new user
         new_user = {
@@ -361,6 +387,7 @@ def register(request):
             'password_hash': hash_password(password),
             'email': email,
             'role_id': role_id,
+            'employee_id': employee_id, # Optional but recommended
             'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
             'active': True
         }

@@ -9,7 +9,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from functools import wraps # Import wraps for decorator
 
-from hr_backend.db import attendance, employees
+from hr_backend.db import attendance, employees, leaves
 from utils.api_utils import (
     serialize_document, 
     create_crud_endpoints,
@@ -44,6 +44,88 @@ def require_user_id(view_func):
              return JsonResponse({'error': 'Invalid authentication', 'message': 'Invalid User ID format.'}, status=401)
         return view_func(request, *args, **kwargs)
     return _wrapped_view
+
+def _merge_attendance_with_leaves(employee_id, start_date=None, end_date=None, status_filter=None):
+    """
+    Helper to merge attendance records with approved leaves and calculate absentees.
+    """
+    query_filter = {'employee_id': employee_id}
+    if status_filter:
+        query_filter['status'] = status_filter
+        
+    # Get attendance records
+    attendance_records = list(attendance.find(query_filter).sort('date', 1))
+    
+    # Also fetch approved leaves - fetch all approved for simplicity and filter in python
+    leave_query = {
+        'employee_id': employee_id,
+        'status': {'$in': ['Approved', 'approved', 'Approved ', ' approved']}
+    }
+    
+    leave_records = list(leaves.find(leave_query))
+    
+    # Fetch employee for hire date
+    employee = employees.find_one({'employee_id': employee_id})
+    if not employee:
+        try:
+            employee = employees.find_one({'_id': ObjectId(employee_id)})
+        except:
+            pass
+            
+    hire_date = employee.get('hire_date') if employee else None
+    
+    results = []
+    attendance_map = {rec['date']: serialize_document(rec) for rec in attendance_records}
+    
+    if start_date and end_date:
+        d1 = datetime.date.fromisoformat(start_date)
+        d2 = datetime.date.fromisoformat(end_date)
+        today = datetime.date.today()
+        
+        curr = d1
+        while curr <= d2:
+            date_str = curr.isoformat()
+            
+            if date_str in attendance_map:
+                results.append(attendance_map[date_str])
+            else:
+                is_on_leave = False
+                leave_type = "Leave"
+                for leave in leave_records:
+                    l_start = leave.get('start_date')
+                    l_end = leave.get('end_date')
+                    if l_start and l_end and l_start <= date_str <= l_end:
+                        is_on_leave = True
+                        leave_type = leave.get('leave_type', 'Leave')
+                        break
+                
+                if is_on_leave:
+                    results.append({
+                        'date': date_str,
+                        'status': f'leave ({leave_type})',
+                        'is_virtual': True
+                    })
+                elif curr < today:
+                    is_after_hire = True
+                    if hire_date:
+                        try:
+                            h_date = datetime.date.fromisoformat(hire_date)
+                            if curr < h_date:
+                                is_after_hire = False
+                        except: pass
+                    
+                    if is_after_hire and curr.weekday() < 5:
+                        results.append({
+                            'date': date_str,
+                            'status': 'absent',
+                            'is_virtual': True
+                        })
+            curr += datetime.timedelta(days=1)
+    else:
+        results = [serialize_document(rec) for rec in attendance_records]
+        
+    results.sort(key=lambda x: x['date'], reverse=True)
+    return results
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -337,51 +419,21 @@ def get_my_attendance(request):
 
         employee_id = employee_id_str
 
-        # Parse query parameters
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
+        # Parse query parameters (handle both camelCase from frontend and snake_case)
+        start_date = request.GET.get('start_date') or request.GET.get('startDate')
+        end_date = request.GET.get('end_date') or request.GET.get('endDate')
         status = request.GET.get('status')
-        limit = int(request.GET.get('limit', 100))
-        page = int(request.GET.get('page', 1))
-        skip = (page - 1) * limit
 
-        # Build query filter
-        # Supports both legacy ObjectId strings and newer business codes (EMP001)
-        query_filter = {'employee_id': employee_id}
-        
-        if start_date and end_date:
-            query_filter['date'] = {'$gte': start_date, '$lte': end_date}
-        elif start_date:
-            query_filter['date'] = {'$gte': start_date}
-        elif end_date:
-            query_filter['date'] = {'$lte': end_date}
-            
-        if status:
-            query_filter['status'] = status
-            
-        # Get attendance records from database with pagination
-        total_count = attendance.count_documents(query_filter)
-        records = list(attendance.find(query_filter).sort('date', -1).skip(skip).limit(limit))
-        
-        # Serialize for response
-        response_data = [serialize_document(rec) for rec in records]
-        
-        # Calculate pagination metadata
-        total_pages = (total_count + limit - 1) // limit
-        has_next = page < total_pages
-        has_prev = page > 1
+        results = _merge_attendance_with_leaves(employee_id, start_date, end_date, status)
         
         return JsonResponse({
-            'results': response_data,
-            'count': total_count,
-            'page': page,
-            'limit': limit,
-            'pages': total_pages,
-            'has_next': has_next,
-            'has_prev': has_prev
+            'results': results,
+            'count': len(results)
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt
@@ -410,47 +462,15 @@ def employee_attendance(request, employee_id):
             return JsonResponse({'error': 'Not found', 'message': f'Employee with ID {employee_id} not found'}, status=404)
 
         # Parse query parameters
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
+        start_date = request.GET.get('start_date') or request.GET.get('startDate')
+        end_date = request.GET.get('end_date') or request.GET.get('endDate')
         status = request.GET.get('status')
-        limit = int(request.GET.get('limit', 100))
-        page = int(request.GET.get('page', 1))
-        skip = (page - 1) * limit
         
-        # Build query filter
-        # Note: In attendance collection, we query by the same employee_id string/internal_id that was used during clock-in
-        query_filter = {'employee_id': employee_id}
-        
-        if start_date and end_date:
-            query_filter['date'] = {'$gte': start_date, '$lte': end_date}
-        elif start_date:
-            query_filter['date'] = {'$gte': start_date}
-        elif end_date:
-            query_filter['date'] = {'$lte': end_date}
-            
-        if status:
-            query_filter['status'] = status
-            
-        # Get attendance records from database with pagination
-        total_count = attendance.count_documents(query_filter)
-        records = list(attendance.find(query_filter).sort('date', -1).skip(skip).limit(limit))
-        
-        # Serialize for response
-        response_data = [serialize_document(rec) for rec in records]
-
-        # Calculate pagination metadata
-        total_pages = (total_count + limit - 1) // limit
-        has_next = page < total_pages
-        has_prev = page > 1
+        results = _merge_attendance_with_leaves(employee_id, start_date, end_date, status)
 
         return JsonResponse({
-            'results': response_data,
-            'count': total_count,
-            'page': page,
-            'limit': limit,
-            'pages': total_pages,
-            'has_next': has_next,
-            'has_prev': has_prev
+            'results': results,
+            'count': len(results)
         })
         
     except Exception as e:
@@ -611,23 +631,10 @@ def get_monthly_report(request, employee_id, year, month):
             
         month_end = (datetime.date(next_year, next_month, 1) - datetime.timedelta(days=1)).isoformat()
         
-        # Get attendance records for the month
-        monthly_records = list(attendance.find({
-            'employee_id': employee_id,
-            'date': {'$gte': month_start, '$lte': month_end}
-        }).sort('date', 1))
+        results = _merge_attendance_with_leaves(employee_id, month_start, month_end)
         
-        # Serialize for response
-        records = []
-        for record in monthly_records:
-            # Convert ObjectId to string for JSON serialization
-            record['_id'] = str(record['_id'])
-            record['employee_id'] = str(record['employee_id'])
-            # Ensure datetime objects are serialized (handled by serialize_document)
-            records.append(serialize_document(record))
-            
         # Calculate total hours
-        total_hours = sum(record.get('total_hours', 0) for record in records 
+        total_hours = sum(record.get('total_hours', 0) for record in results 
                         if record.get('total_hours') is not None)
         
         return JsonResponse({
@@ -635,8 +642,8 @@ def get_monthly_report(request, employee_id, year, month):
             'employee_name': f"{employee.get('first_name', '')} {employee.get('last_name', '')}",
             'year': year,
             'month': month,
-            'records': records,
-            'total_days': len(records),
+            'records': results,
+            'total_days': len(results),
             'total_hours': round(total_hours, 2)
         })
         

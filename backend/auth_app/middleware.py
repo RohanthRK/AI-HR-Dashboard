@@ -16,7 +16,6 @@ class JWTAuthMiddleware:
         # List of paths that don't require authentication
         public_paths = [
             '/api/auth/login',
-            '/api/auth/register',
             '/api/employees/debug/', # Keeping this for now as it's used in many places
         ]
         

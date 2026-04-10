@@ -10,11 +10,36 @@ tickets_collection = db["helpdesk_tickets"]
 @csrf_exempt
 def handle_tickets(request):
     """
-    GET: List all helpdesk tickets
+    GET: List all helpdesk tickets (Department/Role filtered)
     POST: Create a new helpdesk ticket
     """
+    # Extract user info from request (attached by JWTAuthMiddleware)
+    user_id = getattr(request, 'user_id', None)
+    employee_id = getattr(request, 'employee_id', None)
+    user_role = getattr(request, 'role', '').lower()
+
+    # Get employee department for privacy check
+    user_department = 'Other'
+    user_name = 'User'
+    if employee_id:
+        from hr_backend.db import employees
+        employee = employees.find_one({'employee_id': employee_id})
+        if employee:
+            user_department = str(employee.get('department', 'Other')).upper()
+            user_name = f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip()
+
     if request.method == 'GET':
-        tickets = list(tickets_collection.find({}))
+        query = {}
+        # Privacy filter: Only Admins and IT see ALL tickets. Others see their OWN.
+        if user_role != 'admin' and user_department != 'IT':
+            if employee_id:
+                query['employee_id'] = employee_id
+            elif user_id:
+                query['user_id'] = user_id
+            else:
+                return JsonResponse({'success': True, 'tickets': []})
+
+        tickets = list(tickets_collection.find(query).sort('createdAt', -1))
         for ticket in tickets:
             ticket['_id'] = str(ticket['_id'])
         return JsonResponse({'success': True, 'tickets': tickets})
@@ -22,6 +47,10 @@ def handle_tickets(request):
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            # Automatic tagging
+            data['employee_id'] = employee_id
+            data['employee_name'] = user_name
+            
             data['status'] = data.get('status', 'Open')
             data['createdAt'] = datetime.utcnow().isoformat()
             data['comments'] = []
@@ -59,7 +88,7 @@ def handle_ticket_detail(request, ticket_id):
             data = json.loads(request.body)
             
             # Special case for appending a comment vs updating the whole ticket
-            if request.path.endswith('/comment'):
+            if '/comment' in request.path:
                 # Assuming the client sent {'comment': 'string_comment'}
                 comment_text = data.get('comment')
                 if comment_text:
@@ -67,7 +96,8 @@ def handle_ticket_detail(request, ticket_id):
                         {'_id': obj_id},
                         {'$push': {'comments': {
                             'text': comment_text,
-                            'createdAt': datetime.utcnow().isoformat()
+                            'createdAt': datetime.utcnow().isoformat(),
+                            'author': getattr(request, 'username', 'User')
                         }}, '$set': {'updatedAt': datetime.utcnow().isoformat()}}
                     )
             else:
@@ -78,11 +108,12 @@ def handle_ticket_detail(request, ticket_id):
                     {'$set': data}
                 )
             
-            if result.modified_count:
-                updated_ticket = tickets_collection.find_one({'_id': obj_id})
+            # Return the fresh state
+            updated_ticket = tickets_collection.find_one({'_id': obj_id})
+            if updated_ticket:
                 updated_ticket['_id'] = str(updated_ticket['_id'])
                 return JsonResponse({'success': True, 'ticket': updated_ticket})
-            return JsonResponse({'success': False, 'error': 'Ticket not found or no changes made'}, status=404)
+            return JsonResponse({'success': False, 'error': 'Ticket not found'}, status=404)
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 

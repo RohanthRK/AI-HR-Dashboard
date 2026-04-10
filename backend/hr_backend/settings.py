@@ -56,6 +56,8 @@ INSTALLED_APPS = [
     'assets',
     'helpdesk',
     'objectives',
+    'performance',
+    'skills',
 ]
 
 MIDDLEWARE = [

@@ -22,22 +22,43 @@ def require_role(allowed_roles):
 def require_self_or_role(allowed_roles):
     """
     Decorator that allows access if:
-    1. The user's employee_id matches the employee_id in the URL.
+    1. The user's employee_id matches the employee_id in the URL (either _id or physical ID).
     2. The user has one of the allowed roles.
     """
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
-            # Get target employee_id from kwargs
-            target_employee_id = kwargs.get('employee_id')
+            # Get target employee_id from kwargs (can be _id or physical ID)
+            target_id = kwargs.get('employee_id')
             
+            # Check if user has allowed role (shortcut for Admin/Manager)
+            if hasattr(request, 'role') and request.role in allowed_roles:
+                return view_func(request, *args, **kwargs)
+                
             # Check if user is the owner
-            is_owner = hasattr(request, 'employee_id') and str(request.employee_id) == str(target_employee_id)
+            user_employee_id = getattr(request, 'employee_id', None)
+            if not user_employee_id:
+                return JsonResponse({'error': 'Unauthorized', 'message': 'User employee context missing'}, status=401)
             
-            # Check if user has allowed role
-            has_permission = is_owner or (hasattr(request, 'role') and request.role in allowed_roles)
+            # Case 1: Direct match with physical ID
+            is_owner = str(user_employee_id) == str(target_id)
             
-            if not has_permission:
+            # Case 2: Match via MongoDB _id
+            if not is_owner:
+                try:
+                    # Find employee record for target_id to see if it matches our user
+                    query = {'_id': target_id}
+                    if len(str(target_id)) == 24:
+                        try: query = {'_id': ObjectId(target_id)}
+                        except: pass
+                    
+                    target_emp = employees.find_one(query)
+                    if target_emp and target_emp.get('employee_id') == user_employee_id:
+                        is_owner = True
+                except:
+                    pass
+            
+            if not is_owner:
                 return JsonResponse({
                     'error': 'Forbidden',
                     'message': 'You do not have permission to modify this resource.'
