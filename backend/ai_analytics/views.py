@@ -802,10 +802,37 @@ class TeamStatsView(APIView):
                     # Get employees in this team
                     team_employees = [e for e in all_employees if str(e.get("team_id", "")) == str(team_id) or e.get("team") == team.get("name")]
                     
+                    # Resolve leader and manager info
+                    leader_info = None
+                    manager_info = None
+                    
+                    if team.get("leader_id"):
+                        leader_emp = next((e for e in all_employees if str(e["_id"]) == str(team.get("leader_id"))), None)
+                        if leader_emp:
+                            leader_info = {
+                                "id": str(leader_emp["_id"]),
+                                "name": f"{leader_emp.get('first_name', '')} {leader_emp.get('last_name', '')}".strip(),
+                                "position": leader_emp.get("position", "Team Lead")
+                            }
+                    
+                    if team.get("manager_id"):
+                        manager_emp = next((e for e in all_employees if str(e["_id"]) == str(team.get("manager_id"))), None)
+                        if manager_emp:
+                            manager_info = {
+                                "id": str(manager_emp["_id"]),
+                                "name": f"{manager_emp.get('first_name', '')} {manager_emp.get('last_name', '')}".strip(),
+                                "position": manager_emp.get("position", "Team Manager")
+                            }
+
                     # Add team info
                     teams_data.append({
                         "id": str(team_id),
                         "name": team.get("name", "Unnamed Team"),
+                        "description": team.get("description", ""),
+                        "leader_id": team.get("leader_id"),
+                        "manager_id": team.get("manager_id"),
+                        "leader": leader_info,
+                        "manager": manager_info,
                         "employee_count": len(team_employees),
                         "employees": [
                             {
@@ -815,7 +842,9 @@ class TeamStatsView(APIView):
                                 "email": e.get("email", ""),
                                 "phone": e.get("phone", ""),
                                 "hire_date": e.get("hire_date", ""),
-                                "employee_id": e.get("employee_id", str(e["_id"]))
+                                "employee_id": e.get("employee_id", str(e["_id"])),
+                                "is_leader": str(e["_id"]) == str(team.get("leader_id")),
+                                "is_manager": str(e["_id"]) == str(team.get("manager_id"))
                             } for e in team_employees
                         ]
                     })
@@ -914,10 +943,23 @@ class TeamReviewsView(APIView):
             reviewer_id = getattr(request, 'employee_id', None)
             reviewer_name = getattr(request, 'user_info', {}).get('username', 'System')
             
-            if not reviewer_id and hasattr(request, 'user_id'):
-                emp_doc = employees_collection.find_one({'user_id': request.user_id})
-                if emp_doc:
-                    reviewer_id = emp_doc.get('employee_id') or str(emp_doc['_id'])
+            # Use Employees collection from db
+            from hr_backend.db import employees as employees_collection
+            
+            # Find the actual employee to get their full name
+            emp_doc = None
+            if hasattr(request, 'user_id') and request.user_id:
+                try:
+                    emp_doc = employees_collection.find_one({'user_id': ObjectId(request.user_id)})
+                except:
+                    emp_doc = employees_collection.find_one({'user_id': str(request.user_id)})
+            
+            if not emp_doc and reviewer_id:
+                emp_doc = employees_collection.find_one({'$or': [{'employee_id': reviewer_id}, {'_id': reviewer_id}]})
+                
+            if emp_doc:
+                reviewer_id = emp_doc.get('employee_id') or str(emp_doc['_id'])
+                reviewer_name = f"{emp_doc.get('first_name', '')} {emp_doc.get('last_name', '')}".strip() or reviewer_name
             
             review_data['reviewer_id'] = reviewer_id
             review_data['reviewer_name'] = reviewer_name

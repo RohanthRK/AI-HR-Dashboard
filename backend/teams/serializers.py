@@ -20,6 +20,7 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 class TeamSerializer(serializers.ModelSerializer):
     leader = EmployeeBasicSerializer(read_only=True)
+    manager = EmployeeBasicSerializer(read_only=True)
     members = EmployeeBasicSerializer(many=True, read_only=True)
     projects = ProjectSerializer(many=True, read_only=True)
     members_count = serializers.IntegerField(read_only=True)
@@ -28,7 +29,7 @@ class TeamSerializer(serializers.ModelSerializer):
         model = Team
         fields = [
             'id', 'name', 'department', 'description', 
-            'leader', 'members', 'members_count', 
+            'leader', 'manager', 'members', 'members_count', 
             'projects', 'created_at', 'updated_at'
         ]
 
@@ -47,9 +48,16 @@ class TeamCreateUpdateSerializer(serializers.ModelSerializer):
         required=False
     )
     
+    manager_id = serializers.PrimaryKeyRelatedField(
+        queryset=Employee.objects.all(),
+        source='manager',
+        required=False,
+        allow_null=True
+    )
+    
     class Meta:
         model = Team
-        fields = ['id', 'name', 'department', 'description', 'leader_id', 'member_ids']
+        fields = ['id', 'name', 'department', 'description', 'leader_id', 'manager_id', 'member_ids']
     
     def create(self, validated_data):
         members = validated_data.pop('member_ids', [])

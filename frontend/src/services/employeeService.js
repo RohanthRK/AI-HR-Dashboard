@@ -540,7 +540,8 @@ const employeeService = {
   getEmployeeSkills: async (employeeId) => {
     try {
       // Use our new skills API endpoint
-      const response = await axios.get(`${API_URL}/skills/employee/${employeeId}/`);
+      const url = `${API_URL.replace('/employees', '/skills')}/employee/${employeeId}/`;
+      const response = await employeeAPI.get(url);
       return response.data;
     } catch (error) {
       console.error('Error fetching employee skills:', error);
@@ -552,7 +553,8 @@ const employeeService = {
   updateEmployeeSkills: async (employeeId, skillsData) => {
     try {
       // Use our new skills API endpoint
-      const response = await axios.post(`${API_URL}/skills/employee/${employeeId}/update/`, skillsData);
+      const url = `${API_URL.replace('/employees', '/skills')}/employee/${employeeId}/update/`;
+      const response = await employeeAPI.post(url, skillsData);
       return response.data;
     } catch (error) {
       console.error('Error updating employee skills:', error);

@@ -34,8 +34,10 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import objectiveService from '../../services/objectiveService';
+import teamService from '../../services/teamService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSnackbar } from 'notistack';
+import Autocomplete from '@mui/material/Autocomplete';
 
 const OKRTab = () => {
   const [objectives, setObjectives] = useState([]);
@@ -59,6 +61,8 @@ const OKRTab = () => {
     progress: 0,
     key_results: [{ title: '', progress: 0 }]
   });
+  const [teams, setTeams] = useState([]);
+  const [departments, setDepartments] = useState([]);
 
   const fetchObjectives = useCallback(async () => {
     setLoading(true);
@@ -85,6 +89,23 @@ const OKRTab = () => {
   useEffect(() => {
     fetchObjectives();
   }, [fetchObjectives]);
+
+  useEffect(() => {
+    const fetchOrgData = async () => {
+      try {
+        const teamsData = await teamService.getAllTeams();
+        setTeams(Array.isArray(teamsData) ? teamsData : (teamsData.teams || []));
+        
+        const deptsData = await teamService.getAllDepartments();
+        // Handle both simple array and paginated response
+        const deptList = deptsData.results || deptsData || [];
+        setDepartments(deptList);
+      } catch (err) {
+        console.error('Failed to fetch org data', err);
+      }
+    };
+    if (currentUser) fetchOrgData();
+  }, [currentUser]);
 
   const handleScopeChange = (event, newScope) => {
     if (newScope !== null) {
@@ -133,7 +154,12 @@ const OKRTab = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => {
-              setNewOkr({ ...newOkr, scope: scope });
+              setNewOkr({ 
+                ...newOkr, 
+                scope: scope,
+                team_id: currentUser?.team_id || '',
+                department_id: currentUser?.department_id || ''
+              });
               setOpenCreate(true);
             }}
             sx={{
@@ -209,19 +235,37 @@ const OKRTab = () => {
             </Grid>
 
             {newOkr.scope === 'team' && (
-              <TextField
-                label="Team ID"
-                fullWidth
-                value={newOkr.team_id}
-                onChange={(e) => setNewOkr({ ...newOkr, team_id: e.target.value })}
+              <Autocomplete
+                options={teams}
+                getOptionLabel={(option) => option.name || (typeof option === 'string' ? option : '')}
+                value={teams.find(t => t.id === newOkr.team_id || t._id === newOkr.team_id) || null}
+                onChange={(event, newValue) => {
+                  setNewOkr({ ...newOkr, team_id: newValue ? (newValue.id || newValue._id) : '' });
+                }}
+                renderInput={(params) => (
+                  <TextField 
+                    {...params} 
+                    label="Select Team" 
+                    helperText="Search and select the team for this OKR"
+                  />
+                )}
               />
             )}
             {newOkr.scope === 'department' && (
-              <TextField
-                label="Department ID"
-                fullWidth
-                value={newOkr.department_id}
-                onChange={(e) => setNewOkr({ ...newOkr, department_id: e.target.value })}
+              <Autocomplete
+                options={departments}
+                getOptionLabel={(option) => option.name || (typeof option === 'string' ? option : '')}
+                value={departments.find(d => d.id === newOkr.department_id || d._id === newOkr.department_id) || null}
+                onChange={(event, newValue) => {
+                  setNewOkr({ ...newOkr, department_id: newValue ? (newValue.id || newValue._id) : '' });
+                }}
+                renderInput={(params) => (
+                  <TextField 
+                    {...params} 
+                    label="Select Department" 
+                    helperText="Search and select the department for this OKR"
+                  />
+                )}
               />
             )}
 

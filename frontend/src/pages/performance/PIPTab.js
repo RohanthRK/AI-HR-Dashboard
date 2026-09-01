@@ -197,21 +197,22 @@ const PIPTab = () => {
                   </Box>
                   <Button
                     size="small"
-                    startIcon={<EditIcon />}
+                    startIcon={isManager ? <EditIcon /> : <CheckCircleOutlineIcon />}
                     onClick={() => {
                       setSelectedPip(pip);
                       setOpenDetails(true);
                     }}
                     sx={{ 
                       fontWeight: 900, 
-                      bgcolor: '#000', 
-                      color: '#fff', 
+                      bgcolor: isManager ? '#000' : alpha('#40c057', 0.1), 
+                      color: isManager ? '#fff' : '#40c057', 
                       borderRadius: 0,
                       px: 2,
-                      '&:hover': { bgcolor: '#222' }
+                      border: isManager ? 'none' : '2px solid #40c057',
+                      '&:hover': { bgcolor: isManager ? '#222' : alpha('#40c057', 0.2) }
                     }}
                   >
-                    VIEW DETAILS
+                    {isManager ? 'VIEW DETAILS' : 'VIEW PROGRESS LOG'}
                   </Button>
                 </Box>
               </Paper>
@@ -292,25 +293,82 @@ const PIPTab = () => {
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                 Employee: {selectedPip.employee_id}
               </Typography>
+              
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="h6" sx={{ fontWeight: 900, mb: 2 }}>PROGRESS LOG</Typography>
+                <Box sx={{ 
+                  maxHeight: '300px', 
+                  overflowY: 'auto', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 2,
+                  p: 1,
+                  bgcolor: '#f5f5f5',
+                  border: '2px solid #000'
+                }}>
+                  {selectedPip.manager_notes && (
+                    <Box sx={{ 
+                      p: 2, 
+                      bgcolor: '#fff', 
+                      border: '1px solid #dee2e6', 
+                      borderLeft: '5px solid #000',
+                      mb: selectedPip.notes?.length > 0 ? 2 : 0 
+                    }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 800 }}>INITIAL PLAN NOTES</Typography>
+                      </Box>
+                      <Typography variant="body2">{selectedPip.manager_notes}</Typography>
+                    </Box>
+                  )}
+                  {selectedPip.notes && selectedPip.notes.map((note, index) => (
+                    <Box key={index} sx={{ 
+                      p: 2, 
+                      bgcolor: '#fff', 
+                      border: '1px solid #dee2e6', 
+                      borderLeft: `5px solid ${note.role === 'manager' ? '#fa5252' : note.role === 'system' ? '#000' : '#40c057'}`
+                    }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>
+                          {note.author} ({note.role})
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {new Date(note.timestamp).toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2">{note.text}</Typography>
+                    </Box>
+                  ))}
+                  {(!selectedPip.notes || selectedPip.notes.length === 0) && !selectedPip.manager_notes && (
+                    <Typography sx={{ p: 2, fontStyle: 'italic', color: 'text.secondary' }}>
+                      No progress updates recorded yet.
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+
               <TextField
-                label="Status"
-                select
-                fullWidth
-                value={selectedPip.status}
-                onChange={(e) => setSelectedPip({ ...selectedPip, status: e.target.value })}
-              >
-                <MenuItem value="In Progress">In Progress</MenuItem>
-                <MenuItem value="Completed">Completed</MenuItem>
-                <MenuItem value="Cancelled">Cancelled</MenuItem>
-              </TextField>
-              <TextField
-                label="Manager Notes"
+                label="Add New Update / Note"
                 multiline
-                rows={4}
+                rows={3}
                 fullWidth
-                value={selectedPip.manager_notes || ''}
-                onChange={(e) => setSelectedPip({ ...selectedPip, manager_notes: e.target.value })}
+                placeholder="Enter progress update or feedback..."
+                value={selectedPip.new_note || ''}
+                onChange={(e) => setSelectedPip({ ...selectedPip, new_note: e.target.value })}
               />
+
+              {isManager && (
+                <TextField
+                  label="Status"
+                  select
+                  fullWidth
+                  value={selectedPip.status}
+                  onChange={(e) => setSelectedPip({ ...selectedPip, status: e.target.value })}
+                >
+                  <MenuItem value="In Progress">In Progress</MenuItem>
+                  <MenuItem value="Completed">Completed</MenuItem>
+                  <MenuItem value="Cancelled">Cancelled</MenuItem>
+                </TextField>
+              )}
             </Box>
           )}
         </DialogContent>
@@ -321,6 +379,10 @@ const PIPTab = () => {
               try {
                 await performanceService.updatePip(selectedPip._id, selectedPip);
                 enqueueSnackbar('PIP updated successfully', { variant: 'success' });
+                // Clear the new note field if it was used
+                if (selectedPip.new_note) {
+                  setSelectedPip({ ...selectedPip, new_note: '' });
+                }
                 setOpenDetails(false);
                 fetchPIPs();
               } catch (err) {

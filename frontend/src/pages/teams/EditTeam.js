@@ -41,17 +41,26 @@ const EditTeam = () => {
               return;
             }
 
+            const teamLeader = matchingTeam.employees.find(emp => emp.is_leader);
+            const teamManager = matchingTeam.employees.find(emp => emp.is_manager);
+
             // Format the team data to match our form requirements
             foundTeam = {
               id: matchingTeam.id,
               name: matchingTeam.name,
               department: dept.name,
               description: matchingTeam.description || `Team from ${dept.name} department`,
-              leader: matchingTeam.employees.length > 0 ? {
-                id: matchingTeam.employees[0].id,
-                name: matchingTeam.employees[0].name,
-                position: matchingTeam.employees[0].position || 'Team Lead',
-                employee_id: matchingTeam.employees[0].employee_id || matchingTeam.employees[0].id
+              leader: teamLeader ? {
+                id: teamLeader.id,
+                name: teamLeader.name,
+                position: teamLeader.position || 'Team Lead',
+                employee_id: teamLeader.employee_id || teamLeader.id
+              } : null,
+              manager: teamManager ? {
+                id: teamManager.id,
+                name: teamManager.name,
+                position: teamManager.position || 'Manager',
+                employee_id: teamManager.employee_id || teamManager.id
               } : null,
               members: matchingTeam.employees.map(employee => ({
                 id: employee.id,

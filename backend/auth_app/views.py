@@ -103,7 +103,9 @@ def login(request):
                     'first_name': emp_doc.get('first_name', ''),
                     'last_name': emp_doc.get('last_name', ''),
                     'department': emp_doc.get('department', ''),
-                    'team': emp_doc.get('team', '')
+                    'team': emp_doc.get('team', ''),
+                    'department_id': str(emp_doc.get('department_id', '')),
+                    'team_id': str(emp_doc.get('team_id', ''))
                 }
         
         payload = {
@@ -334,19 +336,20 @@ def register(request):
     Endpoint: POST /api/auth/register
     """
     # Security: Only Admin can create new users
-    if getattr(request, 'role', '').lower() != 'admin':
+    user_role = getattr(request, 'role', '') or ''
+    if user_role.strip().lower() != 'admin':
         return JsonResponse({
             'error': 'Forbidden',
-            'message': 'Only administrators can create new user credentials'
+            'message': f'Only administrators can create new user credentials. Your role: {user_role or "unknown"}'
         }, status=403)
 
     try:
         # Parse JSON data
         data = json.loads(request.body)
-        username = data.get('username')
-        password = data.get('password')
-        email = data.get('email')
-        role_id = data.get('role_id')
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        email = data.get('email', '').strip()
+        role_id = data.get('role_id', '').strip()
         
         # Validate required fields
         if not username or not password or not email:
@@ -359,10 +362,18 @@ def register(request):
         if users.find_one({'username': username}):
             return JsonResponse({
                 'error': 'Conflict',
-                'message': 'Username already exists'
+                'message': f'Username "{username}" is already taken. Please choose a different username.'
+            }, status=409)
+
+        # Check if email already exists
+        if users.find_one({'email': email}):
+            return JsonResponse({
+                'error': 'Conflict',
+                'message': f'An account with email "{email}" already exists.'
             }, status=409)
             
         # Validate role ID
+        role_name = 'Employee'
         if not role_id:
             # Default to Employee role
             role_doc = roles.find_one({'name': 'Employee'})
@@ -370,24 +381,26 @@ def register(request):
         
         if role_id:
             try:
-                role = roles.find_one({'_id': ObjectId(role_id)})
-                if not role:
+                role_doc = roles.find_one({'_id': ObjectId(role_id)})
+                if not role_doc:
                     return JsonResponse({
                         'error': 'Invalid role',
                         'message': f'Role with ID {role_id} not found'
                     }, status=400)
-            except:
+                role_name = role_doc.get('name', 'Employee')
+            except Exception:
                 return JsonResponse({'error': 'Invalid ID', 'message': 'Invalid role ID format'}, status=400)
 
-        employee_id = data.get('employee_id') # New linkage field
+        employee_id = data.get('employee_id', '') # New linkage field
             
         # Create new user
         new_user = {
             'username': username,
-            'password_hash': hash_password(password),
+            'password': hashlib.sha256(password.encode()).hexdigest(),  # SHA256 for login compat
+            'password_hash': hash_password(password),                    # Django hash as backup
             'email': email,
             'role_id': role_id,
-            'employee_id': employee_id, # Optional but recommended
+            'employee_id': employee_id,
             'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
             'active': True
         }
@@ -395,7 +408,7 @@ def register(request):
         result = users.insert_one(new_user)
         
         return JsonResponse({
-            'message': 'User registered successfully',
+            'message': f'User "{username}" registered successfully with role {role_name}',
             'user_id': str(result.inserted_id)
         }, status=201)
         
@@ -405,7 +418,222 @@ def register(request):
             'message': 'Invalid JSON data'
         }, status=400)
     except Exception as e:
+        import logging
+        logging.error(f'Register error: {type(e).__name__}: {e}')
+        # Handle MongoDB duplicate key errors gracefully
+        err_str = str(e)
+        if 'duplicate key' in err_str.lower() or 'E11000' in err_str:
+            if 'username' in err_str:
+                return JsonResponse({'error': 'Conflict', 'message': 'Username already exists'}, status=409)
+            if 'email' in err_str:
+                return JsonResponse({'error': 'Conflict', 'message': 'Email is already registered'}, status=409)
+            return JsonResponse({'error': 'Conflict', 'message': 'A user with these details already exists'}, status=409)
+        return JsonResponse({
+            'error': 'Server error',
+            'message': err_str
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_users(request):
+    """
+    Get all users (Restricted to Admin)
+    Endpoint: GET /api/auth/users
+    """
+    # Security: Only Admin can list users
+    if getattr(request, 'role', '').lower() != 'admin':
+        return JsonResponse({
+            'error': 'Forbidden',
+            'message': 'Only administrators can view the user list'
+        }, status=403)
+
+    try:
+        # Fetch all users from MongoDB
+        all_users = list(users.find())
+        
+        # Prepare response data
+        user_list = []
+        for user in all_users:
+            # Get role name
+            role_name = 'Employee'
+            if user.get('role_id'):
+                try:
+                    role_doc = roles.find_one({'_id': ObjectId(user['role_id'])})
+                    if role_doc:
+                        role_name = role_doc.get('name', 'Employee')
+                except:
+                    pass
+            
+            # Get employee details
+            employee_details = {}
+            emp_doc = None
+            if user.get('employee_id'):
+                try:
+                    emp_query = {}
+                    try:
+                        emp_query = {'_id': ObjectId(user['employee_id'])}
+                    except Exception:
+                        emp_query = {'employee_id': user['employee_id']}
+                        
+                    emp_doc = employees.find_one(emp_query)
+                    if not emp_doc:
+                        emp_doc = employees.find_one({'employee_id': user['employee_id']})
+                except Exception:
+                    pass
+
+            # Fallback lookup by email if not found yet
+            if not emp_doc and user.get('email'):
+                try:
+                    emp_doc = employees.find_one({'email': user.get('email')})
+                except Exception:
+                    pass
+
+            if emp_doc:
+                employee_details = {
+                    'first_name': emp_doc.get('first_name', ''),
+                    'last_name': emp_doc.get('last_name', ''),
+                    'position': emp_doc.get('position', ''),
+                    'department': emp_doc.get('department_name', emp_doc.get('department', '')),
+                    'phone': emp_doc.get('phone', ''),
+                    'employee_code': emp_doc.get('employee_id', '')
+                }
+
+            user_list.append({
+                'id': str(user['_id']),
+                'username': user.get('username'),
+                'email': user.get('email'),
+                'role_id': user.get('role_id'),
+                'role_name': role_name,
+                'employee_id': user.get('employee_id') or (str(emp_doc.get('_id')) if emp_doc else ''),
+                'active': user.get('active', True),
+                'created_at': user.get('created_at'),
+                **employee_details
+            })
+            
+        return JsonResponse({'users': user_list})
+        
+    except Exception as e:
         return JsonResponse({
             'error': 'Server error',
             'message': str(e)
         }, status=500)
+
+@csrf_exempt
+@require_http_methods(["PUT", "PATCH"])
+def update_user(request, user_id):
+    """
+    Update user credentials (Restricted to Admin)
+    Endpoint: PUT /api/auth/users/{user_id}
+    """
+    if getattr(request, 'role', '').lower() != 'admin':
+        return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can update users'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        
+        # Build update document
+        update_data = {}
+        if 'email' in data:
+            update_data['email'] = data['email']
+        if 'role_id' in data:
+            update_data['role_id'] = data['role_id']
+        if 'active' in data:
+            update_data['active'] = data['active']
+        if 'employee_id' in data:
+            update_data['employee_id'] = data['employee_id']
+            
+        if not update_data:
+            return JsonResponse({'error': 'No data provided'}, status=400)
+            
+        update_data['updated_at'] = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+        
+        result = users.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': update_data}
+        )
+        
+        if result.matched_count == 0:
+            return JsonResponse({'error': 'Not found', 'message': 'User not found'}, status=404)
+            
+        return JsonResponse({'message': 'User updated successfully'})
+        
+    except Exception as e:
+        return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_user(request, user_id):
+    """
+    Delete user credentials (Restricted to Admin)
+    Endpoint: DELETE /api/auth/users/{user_id}
+    """
+    if getattr(request, 'role', '').lower() != 'admin':
+        return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can delete users'}, status=403)
+
+    try:
+        result = users.delete_one({'_id': ObjectId(user_id)})
+        
+        if result.deleted_count == 0:
+            return JsonResponse({'error': 'Not found', 'message': 'User not found'}, status=404)
+            
+        return JsonResponse({'message': 'User deleted successfully'})
+        
+    except Exception as e:
+        return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_password(request, user_id):
+    """
+    Reset user password (Restricted to Admin)
+    Endpoint: POST /api/auth/users/{user_id}/reset-password
+    """
+    if getattr(request, 'role', '').lower() != 'admin':
+        return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can reset passwords'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        new_password = data.get('password')
+        
+        if not new_password:
+            return JsonResponse({'error': 'Missing data', 'message': 'New password is required'}, status=400)
+            
+        # Update both password (SHA256) and password_hash (Django) for compatibility
+        update_data = {
+            'password': hashlib.sha256(new_password.encode()).hexdigest(),
+            'password_hash': make_password(new_password),
+            'updated_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+        }
+        
+        result = users.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': update_data}
+        )
+        
+        if result.matched_count == 0:
+            return JsonResponse({'error': 'Not found', 'message': 'User not found'}, status=404)
+            
+        return JsonResponse({'message': 'Password reset successfully'})
+        
+    except Exception as e:
+        return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+def roles_handler(request):
+    """Combined handler for GET (list) and POST (create) on /roles/"""
+    if request.method == 'GET':
+        return get_roles(request)
+    elif request.method == 'POST':
+        return create_role(request)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def role_detail_handler(request, role_id):
+    """Combined handler for PUT/PATCH (update) and DELETE on /roles/<role_id>/"""
+    if request.method in ('PUT', 'PATCH'):
+        return update_role(request, role_id)
+    elif request.method == 'DELETE':
+        return delete_role(request, role_id)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)

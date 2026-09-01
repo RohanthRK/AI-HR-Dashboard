@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Container, Alert } from 'react-bootstrap';
 import TeamSelector from './TeamSelector';
 import TeamReview from './TeamReview';
-import axios from 'axios';
+import axios from '../../../../services/api';
 
 const TeamReviewContainer = () => {
   const [currentStep, setCurrentStep] = useState('select'); // 'select', 'review', 'success', 'error'

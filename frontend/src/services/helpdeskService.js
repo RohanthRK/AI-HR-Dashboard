@@ -58,7 +58,7 @@ const helpdeskService = {
   // Add comment to ticket
   addComment: async (ticketId, comment) => {
     try {
-      const response = await helpdeskAPI.patch(`/${ticketId}/comment`, { comment });
+      const response = await helpdeskAPI.patch(`/${ticketId}/comment/`, { comment });
       return response.data;
     } catch (error) {
       throw error;

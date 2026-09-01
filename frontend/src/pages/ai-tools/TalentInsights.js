@@ -433,10 +433,12 @@ const TalentInsights = () => {
     employeesData.forEach(employee => {
       const skills = employee.skills || [];
       skills.forEach(skill => {
-        if (allSkills[skill]) {
-          allSkills[skill]++;
+        const skillName = typeof skill === 'string' ? skill : (skill?.name || '');
+        if (!skillName) return;
+        if (allSkills[skillName]) {
+          allSkills[skillName]++;
         } else {
-          allSkills[skill] = 1;
+          allSkills[skillName] = 1;
         }
       });
     });
@@ -1051,9 +1053,12 @@ const TalentInsights = () => {
                           <CardContent>
                             <Typography variant="h6" gutterBottom>Skills Profile</Typography>
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                              {selectedEmployee.skills && selectedEmployee.skills.map((skill, i) => (
-                                <Chip key={i} label={skill} />
-                              ))}
+                              {selectedEmployee.skills && selectedEmployee.skills.map((skill, i) => {
+                                const skillName = typeof skill === 'string' ? skill : (skill?.name || '');
+                                const proficiency = typeof skill === 'object' ? (skill?.proficiency ?? null) : null;
+                                const label = proficiency !== null ? `${skillName} (${proficiency}/10)` : skillName;
+                                return <Chip key={i} label={label} />;
+                              })}
                             </Box>
                           </CardContent>
                         </Card>

@@ -302,13 +302,6 @@ const Sidebar = ({ open }) => {
       roles: [],
       color: theme.palette.info.main
     },
-    {
-      text: 'Helpdesk Tickets',
-      icon: <SupportAgentIcon />,
-      path: '/helpdesk',
-      roles: [],
-      color: theme.palette.warning.main
-    }
   ];
 
   // Filter items based on user role

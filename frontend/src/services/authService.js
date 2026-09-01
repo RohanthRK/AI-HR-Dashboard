@@ -171,6 +171,51 @@ const authService = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // User Management (Admin only)
+  getUsers: async () => {
+    try {
+      const response = await authAPI.get('/users/', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  updateUser: async (userId, userData) => {
+    try {
+      const response = await authAPI.put(`/users/${userId}/`, userData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  deleteUser: async (userId) => {
+    try {
+      const response = await authAPI.delete(`/users/${userId}/delete/`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  adminResetPassword: async (userId, newPassword) => {
+    try {
+      const response = await authAPI.post(`/users/${userId}/reset-password/`, { password: newPassword }, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 

@@ -46,7 +46,7 @@ import {
   StarBorder as StarBorderIcon
 } from '@mui/icons-material';
 import aiService from '../../services/aiService';
-import axios from 'axios';
+import axios from '../../services/api';
 import { toast } from 'react-hot-toast';
 import employeeService from '../../services/employeeService';
 
@@ -755,11 +755,12 @@ const JobMatching = () => {
                               <Typography variant="subtitle2" gutterBottom>Matching Skills</Typography>
                               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                 {match.required_skills && match.required_skills.map((skill, idx) => {
-                                  const hasSkill = match.matching_skills && match.matching_skills.includes(skill);
+                                  const skillName = typeof skill === 'string' ? skill : (skill?.name || '');
+                                  const hasSkill = match.matching_skills && match.matching_skills.some(s => (typeof s === 'string' ? s : s.name) === skillName);
                                   return (
                                     <Chip
                                       key={idx}
-                                      label={skill}
+                                      label={skillName}
                                       size="small"
                                       color={hasSkill ? 'success' : 'default'}
                                       icon={hasSkill ? <CheckCircleIcon /> : undefined}
@@ -769,7 +770,7 @@ const JobMatching = () => {
                                 {(!match.required_skills || (Array.isArray(match.required_skills) && match.required_skills.length === 0)) &&
                                   match.job?.requiredSkills && match.job.requiredSkills.map((skill, idx) => {
                                     // For backend format
-                                    const hasSkill = match.employee?.skills && match.employee.skills.includes(skill);
+                                    const hasSkill = match.employee?.skills && match.employee.skills.some(s => (typeof s === 'string' ? s : s.name) === skill);
                                     return (
                                       <Chip
                                         key={idx}

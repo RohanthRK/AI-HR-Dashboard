@@ -57,7 +57,8 @@ const TeamDetail = () => {
 
   const isAdminOrManager = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
   const isTeamLeader = team?.leader?.employee_id === currentUser?.employee_id;
-  const canEditTeam = isAdminOrManager || isTeamLeader;
+  const isTeamManager = team?.manager?.employee_id === currentUser?.employee_id;
+  const canEditTeam = isAdminOrManager || isTeamLeader || isTeamManager;
   
   // Allow re-fetching by updating fetchTime when navigating back to this page
   useEffect(() => {
@@ -82,18 +83,29 @@ const TeamDetail = () => {
           if (matchingTeam) {
             // Format the team data to match our requirements
             teamDepartment = dept.name;
+            const teamLeader = matchingTeam.employees.find(emp => emp.is_leader);
+            const teamManager = matchingTeam.employees.find(emp => emp.is_manager);
+
             foundTeam = {
               id: matchingTeam.id,
               name: matchingTeam.name,
               department: dept.name,
               description: `This team is part of the ${dept.name} department and consists of ${matchingTeam.employee_count} team members working together on various projects.`,
-              leader: matchingTeam.employees.length > 0 ? {
-                id: matchingTeam.employees[0].id,
-                name: matchingTeam.employees[0].name,
-                position: matchingTeam.employees[0].position || 'Team Lead',
-                email: matchingTeam.employees[0].email || `${matchingTeam.employees[0].name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
-                phone: matchingTeam.employees[0].phone || 'N/A',
-                employee_id: matchingTeam.employees[0].employee_id || matchingTeam.employees[0].id
+              leader: teamLeader ? {
+                id: teamLeader.id,
+                name: teamLeader.name,
+                position: teamLeader.position || 'Team Lead',
+                email: teamLeader.email || `${teamLeader.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
+                phone: teamLeader.phone || 'N/A',
+                employee_id: teamLeader.employee_id || teamLeader.id
+              } : null,
+              manager: teamManager ? {
+                id: teamManager.id,
+                name: teamManager.name,
+                position: teamManager.position || 'Manager',
+                email: teamManager.email || `${teamManager.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
+                phone: teamManager.phone || 'N/A',
+                employee_id: teamManager.employee_id || teamManager.id
               } : null,
               members: matchingTeam.employees.map(employee => ({
                 id: employee.id,
@@ -102,7 +114,9 @@ const TeamDetail = () => {
                 email: employee.email || `${employee.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
                 phone: employee.phone || 'N/A',
                 employee_id: employee.employee_id || employee.id,
-                hire_date: employee.hire_date || null
+                hire_date: employee.hire_date || null,
+                is_leader: employee.is_leader,
+                is_manager: employee.is_manager
               })),
               projects: [
                 { 
@@ -218,28 +232,52 @@ const TeamDetail = () => {
               {team.description}
             </Typography>
             
-            <Box mt={3}>
-              <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-                Team Lead
-              </Typography>
-              {team.leader ? (
-                <Box display="flex" alignItems="center">
-                  <Avatar sx={{ width: 48, height: 48, mr: 2, bgcolor: 'primary.main' }}>
-                    {team.leader.name.charAt(0)}
-                  </Avatar>
-                  <Box>
-                    <Typography variant="h6">{team.leader.name}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {team.leader.position}
-                    </Typography>
-                  </Box>
-                </Box>
-              ) : (
-                <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                  No Team Lead Assigned
+            <Grid container spacing={2} mt={1}>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+                  Team Lead
                 </Typography>
-              )}
-            </Box>
+                {team.leader ? (
+                  <Box display="flex" alignItems="center">
+                    <Avatar sx={{ width: 48, height: 48, mr: 2, bgcolor: 'primary.main', border: '2px solid #000' }}>
+                      {team.leader.name.charAt(0)}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{team.leader.name}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {team.leader.position}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary" fontStyle="italic">
+                    No Team Lead Assigned
+                  </Typography>
+                )}
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+                  Team Manager
+                </Typography>
+                {team.manager ? (
+                  <Box display="flex" alignItems="center">
+                    <Avatar sx={{ width: 48, height: 48, mr: 2, bgcolor: 'secondary.main', border: '2px solid #000' }}>
+                      {team.manager.name.charAt(0)}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{team.manager.name}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {team.manager.position}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary" fontStyle="italic">
+                    No Manager Assigned
+                  </Typography>
+                )}
+              </Grid>
+            </Grid>
           </Grid>
           <Grid item xs={12} md={4}>
             <Card variant="outlined">
@@ -330,18 +368,27 @@ const TeamDetail = () => {
                             {member.name.charAt(0)}
                           </Avatar>
                           <Box>
-                            <Typography variant="body2">
+                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                               {member.name}
                             </Typography>
-                            {(team.leader && member.id === team.leader.id) && (
-                              <Chip 
-                                size="small" 
-                                label="Team Lead" 
-                                color="primary" 
-                                variant="outlined" 
-                                sx={{ height: 20, fontSize: '0.6rem' }}
-                              />
-                            )}
+                            <Box display="flex" gap={0.5} mt={0.5}>
+                              {member.is_leader && (
+                                <Chip 
+                                  size="small" 
+                                  label="Lead" 
+                                  color="primary" 
+                                  sx={{ height: 20, fontSize: '0.6rem', fontWeight: 'bold', borderRadius: 0 }}
+                                />
+                              )}
+                              {member.is_manager && (
+                                <Chip 
+                                  size="small" 
+                                  label="Manager" 
+                                  color="secondary" 
+                                  sx={{ height: 20, fontSize: '0.6rem', fontWeight: 'bold', borderRadius: 0 }}
+                                />
+                              )}
+                            </Box>
                           </Box>
                         </Box>
                       </TableCell>

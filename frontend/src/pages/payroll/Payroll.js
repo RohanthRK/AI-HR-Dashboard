@@ -25,7 +25,7 @@ import GetAppIcon from '@mui/icons-material/GetApp';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import axios from 'axios';
+import axios from '../../services/api';
 import Chip from '@mui/material/Chip';
 
 const Payroll = () => {

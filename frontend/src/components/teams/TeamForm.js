@@ -6,7 +6,6 @@ import {
   Paper,
   TextField,
   FormControl,
-  InputLabel,
   Select,
   MenuItem,
   Autocomplete,
@@ -15,17 +14,15 @@ import {
   Chip,
   Alert,
   CircularProgress,
-  alpha,
-  Avatar
+  alpha
 } from '@mui/material';
 import {
   Save as SaveIcon,
-  Cancel as CancelIcon,
-  Person as PersonIcon
+  Cancel as CancelIcon
 } from '@mui/icons-material';
 import aiService from '../../services/aiService';
 import employeeService from '../../services/employeeService';
-import axios from 'axios';
+import axios from '../../services/api';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
@@ -44,6 +41,7 @@ const TeamForm = ({ team = null, isEdit = false }) => {
     department: '',
     description: '',
     leader: null,
+    manager: null,
     members: []
   });
   
@@ -54,7 +52,6 @@ const TeamForm = ({ team = null, isEdit = false }) => {
         setLoading(true);
         console.log('Fetching all employees for team selection...');
         
-        // Fetch all employees and department stats in parallel
         const [allEmployees, teamStats] = await Promise.all([
           employeeService.getAllEmployees(),
           aiService.getTeamStats()
@@ -62,11 +59,9 @@ const TeamForm = ({ team = null, isEdit = false }) => {
         
         console.log(`Successfully fetched ${allEmployees.length} employees`);
         
-        // Extract departments from teamStats
         const deptList = teamStats.departments.map(dept => dept.name);
         setDepartments(deptList);
         
-        // Use the full employee list from employeeService
         const employeesList = allEmployees.map(employee => ({
           id: employee._id || employee.id,
           name: employee.name || `${employee.first_name} ${employee.last_name}`,
@@ -85,117 +80,139 @@ const TeamForm = ({ team = null, isEdit = false }) => {
     
     fetchDepartmentsAndEmployees();
     
-    // If editing, populate form with team data
     if (isEdit && team) {
       setFormData({
         name: team.name || '',
         department: team.department || '',
         description: team.description || '',
         leader: team.leader || null,
+        manager: team.manager || null,
         members: team.members || []
       });
     }
   }, [isEdit, team]);
   
-  // Handle input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
-    });
+    setFormData({ ...formData, [name]: value });
   };
   
-  // Handle leader selection
   const handleLeaderChange = (event, newValue) => {
-    setFormData({
-      ...formData,
-      leader: newValue
-    });
+    setFormData({ ...formData, leader: newValue });
   };
   
-  // Handle members selection
+  const handleManagerChange = (event, newValue) => {
+    setFormData({ ...formData, manager: newValue });
+  };
+  
   const handleMembersChange = (event, newValue) => {
-    setFormData({
-      ...formData,
-      members: newValue
-    });
+    setFormData({ ...formData, members: newValue });
   };
   
-  // Form validation
   const validate = () => {
-    if (!formData.name) {
-      setError('Team name is required');
-      return false;
-    }
-    if (!formData.department) {
-      setError('Department is required');
-      return false;
-    }
-    
+    if (!formData.name) { setError('Team name is required'); return false; }
+    if (!formData.department) { setError('Department is required'); return false; }
     return true;
   };
   
-  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validate()) {
-      return;
-    }
+    if (!validate()) return;
     
     try {
       setSubmitting(true);
       setError(null);
       
-      // Prepare data for API
       const apiData = {
         name: formData.name,
         department: formData.department,
         description: formData.description || `Team in ${formData.department} department`,
         leader_id: formData.leader?.id || null,
+        manager_id: formData.manager?.id || null,
         employee_ids: formData.members.map(member => member.id)
       };
       
-      console.log('Submitting team data:', apiData);
-      
-      // Submit to the teams API
-      if (isEdit && team) {
-        const updateUrl = `${API_URL}/teams/teams/${team.id}/mongodb_update/`;
-        console.log('Updating team with URL:', updateUrl);
-        await axios.put(updateUrl, apiData);
-      } else {
-        const createUrl = `${API_URL}/teams/teams/mongodb_create/`;
-        console.log('Creating team with URL:', createUrl);
-        await axios.post(createUrl, apiData);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('Your session has expired or you are not logged in. Please log in again.');
+        return;
       }
       
-      // Show success message
-      setSuccessMessage(isEdit ? 'Team updated successfully!' : 'Team created successfully!');
+      const authHeader = { Authorization: `Bearer ${token}` };
+      console.log('SYNC: Submitting team data with token present');
+
+      if (isEdit && team) {
+        await axios.put(`${API_URL}/teams/teams/${team.id}/mongodb_update/`, apiData, { headers: authHeader });
+      } else {
+        await axios.post(`${API_URL}/teams/teams/mongodb_create/`, apiData, { headers: authHeader });
+      }
       
-      // Navigate after a delay
-      setTimeout(() => {
-        navigate('/teams');
-      }, 1500);
+      setSuccessMessage(isEdit ? 'Team updated successfully!' : 'Team created successfully!');
+      setTimeout(() => { navigate('/teams'); }, 1500);
       
     } catch (err) {
       console.error('Error saving team:', err);
       if (err.response) {
-        console.error('Error status:', err.response.status);
-        console.error('Error data:', err.response.data);
         setError(`Failed to save team: ${err.response.data.error || err.message}`);
       } else {
-      setError('Failed to save team. Please try again.');
+        setError('Failed to save team. Please try again.');
       }
     } finally {
       setSubmitting(false);
     }
   };
   
-  // Handle cancel
   const handleCancel = () => {
     navigate(isEdit && team ? `/teams/${team.id}` : '/teams');
   };
+
+  // Shared input styling
+  const inputSx = {
+    '& .MuiOutlinedInput-root': { borderRadius: 0, border: '3px solid #000', bgcolor: '#fff' },
+    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+    '& .MuiInputBase-input': { fontWeight: 700, px: 2, py: 1.5, fontSize: '0.95rem' }
+  };
+
+  const autocompleteSx = {
+    '& .MuiOutlinedInput-root': { borderRadius: 0, border: '3px solid #000', bgcolor: '#fff', pr: '9px !important' },
+    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+    '& .MuiInputBase-input': { fontWeight: 700, px: 1.5, fontSize: '0.95rem' }
+  };
+
+  const labelSx = {
+    fontWeight: 900,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    fontSize: '0.7rem',
+    display: 'block',
+    mb: 1,
+    color: 'text.secondary'
+  };
+
+  const paperSlotProps = (accentColor) => ({
+    paper: {
+      sx: {
+        border: '3px solid #000',
+        borderRadius: 0,
+        boxShadow: '6px 6px 0px #000',
+        mt: 0.5,
+        minWidth: 340,
+        '& .MuiAutocomplete-option': {
+          fontWeight: 700,
+          fontSize: '0.9rem',
+          py: 1.5,
+          whiteSpace: 'nowrap',
+          borderBottom: '1px solid #eee',
+          '&[aria-selected="true"]': { bgcolor: alpha(accentColor, 0.25) },
+          '&.Mui-focused': { bgcolor: alpha(accentColor, 0.12) },
+          '&:hover': { bgcolor: alpha(accentColor, 0.12) }
+        }
+      }
+    },
+    popper: {
+      sx: { minWidth: 340 }
+    }
+  });
   
   if (loading) {
     return (
@@ -206,230 +223,211 @@ const TeamForm = ({ team = null, isEdit = false }) => {
   }
   
   return (
-    <Paper elevation={0} sx={{ p: 6, border: '4px solid #000', boxShadow: '15px 15px 0px #fcc419', borderRadius: 0 }}>
+    <Paper elevation={0} sx={{ p: { xs: 3, md: 5 }, border: '4px solid #000', boxShadow: '15px 15px 0px #fcc419', borderRadius: 0 }}>
       <Typography variant="h4" sx={{ fontWeight: 900, mb: 4, textTransform: 'uppercase', letterSpacing: -1 }}>
         {isEdit ? 'EDIT TEAM' : 'CREATE NEW TEAM'}
       </Typography>
       
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
-      
-      {successMessage && (
-        <Alert severity="success" sx={{ mb: 3 }}>
-          {successMessage}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+      {successMessage && <Alert severity="success" sx={{ mb: 3 }}>{successMessage}</Alert>}
       
       <form onSubmit={handleSubmit}>
         <Grid container spacing={3}>
+
+          {/* Row 1: Team Name + Department */}
           <Grid item xs={12} md={6}>
+            <Typography sx={labelSx}>Team Name *</Typography>
             <TextField
               fullWidth
-              label="Team Name"
               name="name"
               value={formData.name}
               onChange={handleChange}
               required
-              sx={{ 
-                '& .MuiOutlinedInput-root': { borderRadius: 0, border: '3px solid #000', bgcolor: '#fff' },
-                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                '& .MuiInputLabel-root': { fontWeight: 900, color: 'text.primary', textTransform: 'uppercase' }
-              }}
+              placeholder="e.g. Customer Support Alpha"
+              variant="outlined"
+              sx={inputSx}
             />
           </Grid>
-          
+
           <Grid item xs={12} md={6}>
+            <Typography sx={labelSx}>Department *</Typography>
             <FormControl fullWidth required>
-              <InputLabel sx={{ fontWeight: 900, color: 'text.primary', textTransform: 'uppercase' }}>Department</InputLabel>
               <Select
                 name="department"
                 value={formData.department}
                 onChange={handleChange}
-                label="Department"
-                sx={{ 
-                  borderRadius: 0, 
+                displayEmpty
+                sx={{
+                  borderRadius: 0,
                   border: '3px solid #000',
                   '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
                   bgcolor: '#fff',
-                  fontWeight: 900
+                  fontWeight: 700,
+                  '& .MuiSelect-select': { py: 1.5, px: 2, fontSize: '0.95rem' }
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: { border: '3px solid #000', borderRadius: 0, boxShadow: '6px 6px 0px #000', mt: 0.5,
+                      '& .MuiMenuItem-root': { fontWeight: 700, fontSize: '0.9rem', py: 1.5, borderBottom: '1px solid #eee' }
+                    }
+                  }
                 }}
               >
+                <MenuItem value="" disabled sx={{ color: 'text.disabled' }}>Select a department...</MenuItem>
                 {departments.map(dept => (
-                  <MenuItem key={dept} value={dept} sx={{ fontWeight: 800 }}>
-                    {dept}
-                  </MenuItem>
+                  <MenuItem key={dept} value={dept}>{dept}</MenuItem>
                 ))}
               </Select>
             </FormControl>
           </Grid>
-          
+
+          {/* Row 2: Description — ALWAYS FULL WIDTH */}
           <Grid item xs={12}>
+            <Typography sx={labelSx}>Description</Typography>
             <TextField
               fullWidth
-              label="Description"
               name="description"
               value={formData.description}
               onChange={handleChange}
               multiline
-              rows={3}
-              sx={{ 
-                '& .MuiOutlinedInput-root': { borderRadius: 0, border: '3px solid #000', bgcolor: '#fff' },
-                '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                '& .MuiInputLabel-root': { fontWeight: 900, color: 'text.primary', textTransform: 'uppercase' }
+              rows={4}
+              placeholder="Describe the team's responsibilities and goals..."
+              variant="outlined"
+              sx={{
+                ...inputSx,
+                '& .MuiInputBase-input': { fontWeight: 600, px: 2, py: 1.5, fontSize: '1rem' }
               }}
             />
           </Grid>
-          
-          <Grid item xs={12} md={6}>
+
+          {/* Row 3: Team Leader — DEDICATED FULL WIDTH ROW */}
+          <Grid item xs={12}>
+            <Typography sx={labelSx}>Team Leader (Search & Select)</Typography>
             <Autocomplete
+              fullWidth
               options={employees}
               getOptionLabel={(option) => `${option.name} (${option.employee_id})`}
               value={formData.leader}
               onChange={handleLeaderChange}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              slotProps={paperSlotProps('#fcc419')}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Team Leader"
+                  placeholder="Type to search for an employee..."
                   variant="outlined"
-                  sx={{ 
-                    '& .MuiOutlinedInput-root': { borderRadius: 0, border: '3px solid #000', bgcolor: '#fff' },
-                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                    '& .MuiInputLabel-root': { fontWeight: 900, color: 'text.primary', textTransform: 'uppercase' }
+                  sx={{
+                    ...autocompleteSx,
+                    '& .MuiOutlinedInput-root': {
+                      ...autocompleteSx['& .MuiOutlinedInput-root'],
+                      minHeight: 60,
+                      px: 2
+                    }
                   }}
                 />
               )}
-              renderOption={(props, option) => (
-                <li {...props} style={{ padding: '8px 16px', borderBottom: '1px solid #eee' }}>
-                  <Box display="flex" alignItems="center" sx={{ width: '100%', py: 1 }}>
-                    <Avatar sx={{ 
-                      mr: 2, 
-                      width: 40, 
-                      height: 40, 
-                      bgcolor: '#fcc419', 
-                      color: 'text.primary', 
-                      fontWeight: 900, 
-                      border: '2px solid #000',
-                      borderRadius: 0
-                    }}>
-                      {option.name?.[0]}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body1" sx={{ fontWeight: 900, color: 'text.primary', textTransform: 'uppercase', lineHeight: 1 }}>
-                        {option.name}
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        {option.position} • {option.employee_id}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </li>
-              )}
-              ListboxProps={{
-                sx: { 
-                  p: 0, 
-                  '& .MuiAutocomplete-option': { 
-                    '&[aria-selected="true"]': { bgcolor: alpha('#fcc419', 0.2) },
-                    '&.Mui-focused': { bgcolor: alpha('#fcc419', 0.1) },
-                    '&:hover': { bgcolor: alpha('#fcc419', 0.1) }
-                  },
-                  border: '3px solid #000',
-                  borderRadius: 0,
-                  mt: 1,
-                  boxShadow: '8px 8px 0px #000'
-                }
-              }}
             />
           </Grid>
-          
-          <Grid item xs={12} md={6}>
+
+          {/* Row 4: Team Manager — DEDICATED FULL WIDTH ROW */}
+          <Grid item xs={12}>
+            <Typography sx={labelSx}>Team Manager (Search & Select)</Typography>
+            <Autocomplete
+              fullWidth
+              options={employees}
+              getOptionLabel={(option) => `${option.name} (${option.employee_id})`}
+              value={formData.manager}
+              onChange={handleManagerChange}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              slotProps={paperSlotProps('#74c0fc')}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Type to search for a manager..."
+                  variant="outlined"
+                  sx={{
+                    ...autocompleteSx,
+                    '& .MuiOutlinedInput-root': {
+                      ...autocompleteSx['& .MuiOutlinedInput-root'],
+                      minHeight: 60,
+                      px: 2
+                    }
+                  }}
+                />
+              )}
+            />
+          </Grid>
+
+          {/* Row 4: Team Members — full width */}
+          <Grid item xs={12}>
+            <Typography sx={labelSx}>Team Members</Typography>
             <Autocomplete
               multiple
+              fullWidth
               options={employees}
               getOptionLabel={(option) => `${option.name} (${option.employee_id})`}
               value={formData.members}
               onChange={handleMembersChange}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Team Members"
-                  variant="outlined"
-                  sx={{ 
-                    '& .MuiOutlinedInput-root': { borderRadius: 0, border: '3px solid #000', bgcolor: '#fff' },
-                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-                    '& .MuiInputLabel-root': { fontWeight: 900, color: 'text.primary', textTransform: 'uppercase' }
-                  }}
-                />
-              )}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              slotProps={paperSlotProps('#fcc419')}
               renderTags={(value, getTagProps) =>
                 value.map((option, index) => (
                   <Chip
-                    label={option.name}
+                    key={option.id}
+                    label={`${option.name} (${option.employee_id})`}
                     size="small"
-                    sx={{ borderRadius: 0, border: '2px solid #000', fontWeight: 900, bgcolor: '#fcc419', color: 'text.primary' }}
+                    sx={{
+                      borderRadius: 0,
+                      border: '2px solid #000',
+                      fontWeight: 900,
+                      bgcolor: '#fcc419',
+                      color: 'text.primary',
+                      m: 0.3,
+                      '& .MuiChip-deleteIcon': { color: '#000', '&:hover': { color: '#555' } }
+                    }}
                     {...getTagProps({ index })}
                   />
                 ))
               }
-              renderOption={(props, option) => (
-                <li {...props} style={{ padding: '8px 16px', borderBottom: '1px solid #eee' }}>
-                  <Box display="flex" alignItems="center" sx={{ width: '100%', py: 1 }}>
-                    <Avatar sx={{ 
-                      mr: 2, 
-                      width: 40, 
-                      height: 40, 
-                      bgcolor: '#fcc419', 
-                      color: 'text.primary', 
-                      fontWeight: 900, 
-                      border: '2px solid #000',
-                      borderRadius: 0
-                    }}>
-                      {option.name?.[0]}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="body1" sx={{ fontWeight: 900, color: 'text.primary', textTransform: 'uppercase', lineHeight: 1 }}>
-                        {option.name}
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        {option.position} • {option.employee_id}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </li>
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={formData.members.length === 0 ? 'Search and add team members...' : ''}
+                  variant="outlined"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 0,
+                      border: '3px solid #000',
+                      bgcolor: '#fff',
+                      flexWrap: 'wrap',
+                      gap: 0.3,
+                      p: '6px'
+                    },
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    '& .MuiInputBase-input': { fontWeight: 700, fontSize: '0.95rem', minWidth: '200px', px: 1 }
+                  }}
+                />
               )}
-              ListboxProps={{
-                sx: { 
-                  p: 0, 
-                  '& .MuiAutocomplete-option': { 
-                    '&[aria-selected="true"]': { bgcolor: alpha('#fcc419', 0.2) },
-                    '&.Mui-focused': { bgcolor: alpha('#fcc419', 0.1) },
-                    '&:hover': { bgcolor: alpha('#fcc419', 0.1) }
-                  },
-                  border: '3px solid #000',
-                  borderRadius: 0,
-                  mt: 1,
-                  boxShadow: '8px 8px 0px #000'
-                }
-              }}
             />
           </Grid>
-          
+
+          {/* Row 5: Action Buttons */}
           <Grid item xs={12}>
-            <Box display="flex" justifyContent="flex-end" gap={3} mt={4}>
+            <Box display="flex" justifyContent="flex-end" gap={2} mt={4} flexWrap="wrap">
               <Button
                 variant="outlined"
                 startIcon={<CancelIcon />}
                 onClick={handleCancel}
-                sx={{ 
-                  borderRadius: 0, 
-                  border: '3px solid #000', 
-                  color: 'text.primary', 
+                sx={{
+                  borderRadius: 0,
+                  border: '3px solid #000',
+                  color: 'text.primary',
                   fontWeight: 900,
                   px: 4,
-                  py: 1,
-                  '&:hover': { border: '3px solid #000', bgcolor: alpha('#000', 0.05) }
+                  py: 1.5,
+                  fontSize: '0.9rem',
+                  letterSpacing: 1,
+                  '&:hover': { border: '3px solid #000', bgcolor: alpha('#000', 0.06) }
                 }}
               >
                 CANCEL
@@ -439,26 +437,30 @@ const TeamForm = ({ team = null, isEdit = false }) => {
                 variant="contained"
                 startIcon={<SaveIcon />}
                 disabled={submitting}
-                sx={{ 
-                  borderRadius: 0, 
-                  bgcolor: 'text.primary', 
-                  color: '#fff', 
+                sx={{
+                  borderRadius: 0,
+                  bgcolor: '#111',
+                  color: '#fff',
                   fontWeight: 900,
                   border: '3px solid #000',
-                  boxShadow: '4px 4px 0px #fcc419',
+                  boxShadow: '5px 5px 0px #fcc419',
                   px: 4,
-                  py: 1,
-                  '&:hover': { bgcolor: '#333' }
+                  py: 1.5,
+                  fontSize: '0.9rem',
+                  letterSpacing: 1,
+                  '&:hover': { bgcolor: '#333', boxShadow: '3px 3px 0px #fcc419' },
+                  '&.Mui-disabled': { bgcolor: '#999', color: '#ccc', border: '3px solid #999', boxShadow: 'none' }
                 }}
               >
                 {submitting ? 'SAVING...' : isEdit ? 'UPDATE TEAM' : 'CREATE TEAM'}
               </Button>
             </Box>
           </Grid>
+
         </Grid>
       </form>
     </Paper>
   );
 };
 
-export default TeamForm; 
+export default TeamForm;

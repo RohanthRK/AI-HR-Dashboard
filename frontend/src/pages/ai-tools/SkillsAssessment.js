@@ -608,15 +608,18 @@ const SkillsAssessment = () => {
                     <TableCell>{employee.department}</TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {employee.matching_skills.map((skill, index) => (
-                          <Chip 
-                            key={index} 
-                            label={skill} 
-                            size="small" 
-                            color="primary" 
-                            variant="outlined" 
-                          />
-                        ))}
+                        {employee.matching_skills.map((skill, index) => {
+                          const skillName = typeof skill === 'string' ? skill : (skill?.name || '');
+                          return (
+                            <Chip 
+                              key={index} 
+                              label={skillName} 
+                              size="small" 
+                              color="primary" 
+                              variant="outlined" 
+                            />
+                          );
+                        })}
                       </Box>
                     </TableCell>
                     <TableCell align="center">

@@ -81,15 +81,17 @@ const Assets = () => {
                 <Typography variant="h4" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
                     Asset Management
                 </Typography>
-                <Button
-                    variant="contained"
-                    color="secondary"
-                    startIcon={<AddIcon />}
-                    onClick={() => setOpenDialog(true)}
-                    className="brutal-shadow-hover"
-                >
-                    Add Asset
-                </Button>
+                {isAdmin && (
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={<AddIcon />}
+                        onClick={() => setOpenDialog(true)}
+                        className="brutal-shadow-hover"
+                    >
+                        Add Asset
+                    </Button>
+                )}
             </Box>
 
             <Paper className="brutal-border brutal-shadow" sx={{ p: 0, bgcolor: 'background.paper' }} elevation={0}>

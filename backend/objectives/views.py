@@ -31,6 +31,7 @@ def get_objectives(request):
             
             if scope == 'individual':
                 query['employee_id'] = employee_id or user_id
+                query['scope'] = 'individual'
             elif scope == 'team':
                 team_id = request.GET.get('team_id')
                 if team_id:

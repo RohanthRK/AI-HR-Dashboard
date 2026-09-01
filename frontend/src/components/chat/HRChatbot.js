@@ -10,7 +10,7 @@ import {
     SmartToy as SmartToyIcon,
     Person as PersonIcon
 } from '@mui/icons-material';
-import axios from 'axios';
+import axios from '../../services/api';
 import ReactMarkdown from 'react-markdown';
 
 const HRChatbot = () => {

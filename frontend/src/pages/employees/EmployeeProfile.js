@@ -37,18 +37,21 @@ import {
 import employeeService from '../../services/employeeService';
 import { useAuth } from '../../contexts/AuthContext';
 import ProfileEditModal from '../../components/employees/ProfileEditModal';
+import ManageSkillsModal from '../../components/employees/ManageSkillsModal';
 
 const EmployeeProfile = () => {
   const { id } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
 
   const theme = useTheme();
   const isOwner = (currentUser?.employee_id && (id === currentUser.employee_id || employee?.employee_id === currentUser.employee_id)) || (currentUser?.id === id);
+  const canEdit = isOwner || isAdmin();
 
   const fetchEmployeeData = useCallback(async () => {
     setLoading(true);
@@ -170,7 +173,7 @@ const EmployeeProfile = () => {
               </Typography>
             </Stack>
           </Grid>
-          {isOwner && (
+          {canEdit && (
             <Grid item sx={{ mb: 4 }}>
               <Button 
                 variant="contained" 
@@ -270,12 +273,34 @@ const EmployeeProfile = () => {
           <Grid item>
             <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, display: 'block', mb: 1 }}>Reporting Manager</Typography>
             <Stack direction="row" spacing={2} alignItems="center">
-              <Avatar sx={{ width: 40, height: 40, bgcolor: '#fcc419', color: '#000', fontWeight: 900, border: '2px solid #000', borderRadius: 0 }}>{employee.manager_name?.[0] || 'M'}</Avatar>
+              <Avatar 
+                onClick={() => isAdmin() && setIsEditModalOpen(true)}
+                sx={{ 
+                  width: 40, height: 40, bgcolor: '#fcc419', color: '#000', fontWeight: 900, 
+                  border: '2px solid #000', borderRadius: 0,
+                  cursor: isAdmin() ? 'pointer' : 'default'
+                }}
+              >
+                {employee.manager_name?.[0] || 'M'}
+              </Avatar>
               <Typography 
-                component={Link} 
+                onClick={(e) => {
+                  if (isAdmin()) {
+                    e.preventDefault();
+                    setIsEditModalOpen(true);
+                  }
+                }}
+                component={employee.manager_id_str && !isAdmin() ? Link : 'span'} 
                 to={employee.manager_id_str ? `/employees/${employee.manager_id_str}` : '#'} 
                 variant="h5" 
-                sx={{ color: 'text.primary', fontWeight: 900, textDecoration: 'none', borderBottom: '3px solid #fcc419', '&:hover': { bgcolor: alpha('#fcc419', 0.1) } }}
+                sx={{ 
+                  color: 'text.primary', 
+                  fontWeight: 900, 
+                  textDecoration: 'none', 
+                  borderBottom: '3px solid #fcc419', 
+                  cursor: isAdmin() || employee.manager_id_str ? 'pointer' : 'default',
+                  '&:hover': { bgcolor: alpha('#fcc419', 0.1) } 
+                }}
               >
                 {employee.manager_name || 'Not Added'}
               </Typography>
@@ -398,28 +423,56 @@ const EmployeeProfile = () => {
                         No skills added yet. Showcase your technical and creative expertise!
                       </Typography>
                     ) : (
-                      employee.skills.map((skill) => (
-                        <Chip
-                          key={skill}
-                          label={skill}
-                          sx={{
-                            fontWeight: 800,
-                            borderRadius: 0,
-                            border: '2px solid #000',
-                            bgcolor: theme.palette.mode === 'dark' ? alpha('#fcc419', 0.1) : '#fff',
-                            color: theme.palette.mode === 'dark' ? '#fcc419' : '#000',
-                            px: 1,
-                            height: 35
-                          }}
-                        />
-                      ))
+                      employee.skills.map((skill) => {
+                        const skillName = typeof skill === 'string' ? skill : (skill?.name || '');
+                        const proficiency = typeof skill === 'object' ? (skill?.proficiency ?? null) : null;
+                        const profColor = proficiency !== null
+                          ? proficiency <= 3 ? '#fa5252' : proficiency <= 6 ? '#fd7e14' : '#40c057'
+                          : null;
+                        return (
+                          <Box
+                            key={skillName}
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              fontWeight: 800,
+                              borderRadius: 0,
+                              border: '2px solid #000',
+                              bgcolor: theme.palette.mode === 'dark' ? alpha('#fcc419', 0.1) : '#fff',
+                              color: theme.palette.mode === 'dark' ? '#fcc419' : '#000',
+                              px: 1.5,
+                              py: 0.5,
+                              fontSize: '0.85rem',
+                            }}
+                          >
+                            {skillName}
+                            {proficiency !== null && (
+                              <Box
+                                component="span"
+                                sx={{
+                                  bgcolor: profColor,
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  fontSize: '0.7rem',
+                                  px: 0.75,
+                                  py: 0.1,
+                                  ml: 0.5,
+                                  borderRadius: 0,
+                                }}
+                              >
+                                {proficiency}/10
+                              </Box>
+                            )}
+                          </Box>
+                        );
+                      })
                     )}
                   </Box>
 
-                  {isOwner && (
+                  {canEdit && (
                     <Button 
-                        component={Link}
-                        to="/performance?tab=skills"
+                        onClick={() => setIsSkillModalOpen(true)}
                         variant="contained" 
                         sx={{ 
                             bgcolor: '#fcc419', 
@@ -547,6 +600,15 @@ const EmployeeProfile = () => {
       <ProfileEditModal 
         open={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
+        employee={employee}
+        onSaveSuccess={() => fetchEmployeeData()}
+        isAdmin={isAdmin()}
+      />
+
+      {/* 8. MANAGE SKILLS MODAL */}
+      <ManageSkillsModal
+        open={isSkillModalOpen}
+        onClose={() => setIsSkillModalOpen(false)}
         employee={employee}
         onSaveSuccess={() => fetchEmployeeData()}
       />

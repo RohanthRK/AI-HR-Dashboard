@@ -31,6 +31,18 @@ def debug_teams(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@api_view(['GET'])
+def mongodb_list(request):
+    """
+    Official MongoDB list endpoint for teams
+    """
+    try:
+        teams = list(teams_collection.find({}))
+        serialized_results = [serialize_document(doc) for doc in teams]
+        return JsonResponse(serialized_results, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 class TeamViewSet(viewsets.ModelViewSet):
     """
     ViewSet for viewing and editing Team instances.
@@ -140,7 +152,9 @@ def mongodb_create(request):
             'description': data.get('description', f"Team in {data.get('department')} department"),
             'created_at': datetime.now().isoformat(),
             'updated_at': datetime.now().isoformat(),
-            'employees': []
+            'employees': [],
+            'manager_id': data.get('manager_id'),
+            'leader_id': data.get('leader_id')
         }
         
         # Process employee IDs if provided
@@ -152,10 +166,13 @@ def mongodb_create(request):
                 employee_ids = [employee_ids]
         
         leader_id = data.get('leader_id')
+        manager_id = data.get('manager_id')
         
-        # If leader_id is provided and not in employee_ids, add it
+        # If leader_id/manager_id is provided and not in employee_ids, add it
         if leader_id and leader_id not in employee_ids:
             employee_ids.append(leader_id)
+        if manager_id and manager_id not in employee_ids:
+            employee_ids.append(manager_id)
         
         # Fetch employee details and add to team
         if employee_ids:
@@ -177,7 +194,8 @@ def mongodb_create(request):
                             'id': str(employee['_id']),
                             'name': f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip(),
                             'position': employee.get('position', 'Team Member'),
-                            'is_leader': str(emp_id) == str(leader_id)
+                            'is_leader': str(emp_id) == str(leader_id),
+                            'is_manager': str(emp_id) == str(manager_id)
                         }
                         team_doc['employees'].append(employee_data)
                         
@@ -197,7 +215,8 @@ def mongodb_create(request):
                             current_teams.append({
                                 'name': team_doc['name'],
                                 'department': team_doc['department'],
-                                'is_leader': str(emp_id) == str(leader_id)
+                                'is_leader': str(emp_id) == str(leader_id),
+                                'is_manager': str(emp_id) == str(manager_id)
                             })
                             employees_collection.update_one(
                                 {'_id': employee_oid},
@@ -236,6 +255,11 @@ def mongodb_update(request, pk=None):
     Update a team in MongoDB with department and employee data
     """
     try:
+        # Debug logging for auth
+        auth_header = request.headers.get('Authorization', 'MISSING')
+        user_role = getattr(request, 'role', 'UNDEFINED')
+        print(f"DEBUG AUTH: Path {request.path} | Role: {user_role} | Header: {auth_header[:20]}...")
+
         if not pk:
             return Response({'error': 'Team ID is required'}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -258,7 +282,9 @@ def mongodb_update(request, pk=None):
             'department': new_department,
             'description': data.get('description', team.get('description')),
             'updated_at': datetime.now().isoformat(),
-            'employees': []
+            'employees': [],
+            'manager_id': data.get('manager_id', team.get('manager_id')),
+            'leader_id': data.get('leader_id', team.get('leader_id'))
         }
         
         # Collect old employee ids for comparison
@@ -267,9 +293,12 @@ def mongodb_update(request, pk=None):
         # Process new employee IDs
         employee_ids = data.get('employee_ids', [])
         leader_id = data.get('leader_id')
+        manager_id = data.get('manager_id')
         
         if leader_id and leader_id not in employee_ids:
             employee_ids.append(leader_id)
+        if manager_id and manager_id not in employee_ids:
+            employee_ids.append(manager_id)
         
         new_employee_ids = set(str(eid) for eid in employee_ids)
         
@@ -302,7 +331,8 @@ def mongodb_update(request, pk=None):
                             'phone': employee.get('phone', ''),
                             'hire_date': employee.get('hire_date', ''),
                             'employee_id': employee.get('employee_id', str(employee['_id'])),
-                            'is_leader': str(emp_id) == str(leader_id)
+                            'is_leader': str(emp_id) == str(leader_id),
+                            'is_manager': str(emp_id) == str(manager_id)
                         }
                         update_doc['employees'].append(employee_data)
                         

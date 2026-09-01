@@ -65,6 +65,16 @@ const expenseService = {
     }
   },
 
+  // Add comment to expense claim
+  addComment: async (expenseId, comment) => {
+    try {
+      const response = await expenseAPI.patch(`/${expenseId}/comment/`, { comment });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Delete expense
   deleteExpense: async (expenseId) => {
     try {

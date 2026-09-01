@@ -97,7 +97,7 @@ def handle_ticket_detail(request, ticket_id):
                         {'$push': {'comments': {
                             'text': comment_text,
                             'createdAt': datetime.utcnow().isoformat(),
-                            'author': getattr(request, 'username', 'User')
+                            'author': request.user_info.get('username', 'User') if hasattr(request, 'user_info') else 'User'
                         }}, '$set': {'updatedAt': datetime.utcnow().isoformat()}}
                     )
             else:

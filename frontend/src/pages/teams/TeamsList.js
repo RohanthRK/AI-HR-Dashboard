@@ -36,7 +36,7 @@ import {
   Business as BusinessIcon,
   Add as AddIcon
 } from '@mui/icons-material';
-import axios from 'axios';
+import axios from '../../services/api';
 import aiService from '../../services/aiService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme, alpha } from '@mui/material/styles';
@@ -72,15 +72,12 @@ const TeamsList = () => {
               name: team.name,
               department: dept.name,
               description: `Team from ${dept.name} department`,
-              leader: team.employees.length > 0 ? {
-                id: team.employees[0].id,
-                name: team.employees[0].name,
-                position: team.employees[0].position || 'Team Lead'
-              } : {
+              leader: team.leader || {
                 id: 0,
                 name: 'Not Assigned',
                 position: 'Team Lead'
               },
+              manager: team.manager,
               members: team.employees.map(employee => ({
                 id: employee.id,
                 name: employee.name,
@@ -364,17 +361,46 @@ const TeamCard = ({ team }) => {
         </Typography>
         
         <Box mb={2}>
-          <Typography variant="subtitle2" gutterBottom>
-            Team Lead:
-          </Typography>
-          <Box display="flex" alignItems="center">
-            <Avatar sx={{ width: 32, height: 32, mr: 1, bgcolor: 'primary.main' }}>
-              {team.leader?.name.charAt(0) || '?'}
-            </Avatar>
-            <Typography variant="body2">
-              {team.leader?.name || 'Not Assigned'} • {team.leader?.position || 'Team Lead'}
-            </Typography>
-          </Box>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={team.manager ? 6 : 12}>
+              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem' }}>
+                Team Lead:
+              </Typography>
+              <Box display="flex" alignItems="center">
+                <Avatar sx={{ width: 28, height: 28, mr: 1, bgcolor: 'primary.main', border: '2px solid #000' }}>
+                  {team.leader?.name.charAt(0) || '?'}
+                </Avatar>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                    {team.leader?.name || 'Not Assigned'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    {team.leader?.position || 'Team Lead'}
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
+            {team.manager && (
+              <Grid item xs={12} sm={6}>
+                <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem' }}>
+                  Manager:
+                </Typography>
+                <Box display="flex" alignItems="center">
+                  <Avatar sx={{ width: 28, height: 28, mr: 1, bgcolor: 'secondary.main', border: '2px solid #000' }}>
+                    {team.manager.name.charAt(0)}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                      {team.manager.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      {team.manager.position}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            )}
+          </Grid>
         </Box>
         
         <Typography variant="subtitle2" gutterBottom>

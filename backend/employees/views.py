@@ -15,7 +15,7 @@ from django.http import JsonResponse, HttpResponse, FileResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
-from hr_backend.db import employees, departments, documents, teams as teams_collection
+from hr_backend.db import users, roles, employees, departments, documents, teams as teams_collection
 from utils.api_utils import (
     serialize_document, 
     create_crud_endpoints,
@@ -349,6 +349,27 @@ def get_employee(request, employee_id):
             response_data['emergency_contact_phone'] = ec.get('phone', '')
             response_data['personal_email'] = ec.get('personal_email', '')
             
+        # 3. ENHANCE: Add User Role info
+        try:
+            # Find user linked to this employee
+            user_doc = users.find_one({'employee_id': current_physical_id})
+            if not user_doc:
+                # Try finding by MongoDB _id if physical ID missing
+                user_doc = users.find_one({'employee_id': current_emp_id})
+                
+            if user_doc:
+                response_data['role_id'] = user_doc.get('role_id', '')
+                # Get role name for display
+                if response_data['role_id']:
+                    try:
+                        role_doc = roles.find_one({'_id': ObjectId(response_data['role_id'])})
+                        if role_doc:
+                            response_data['role_name'] = role_doc.get('name', 'Employee')
+                    except:
+                        pass
+        except:
+            pass
+            
         return JsonResponse(response_data)
         
     except Exception as e:
@@ -424,68 +445,54 @@ def create_employee(request):
         elif 'employment_status' in data and 'status' not in data:
             data['status'] = data['employment_status']
         elif 'employment_status' not in data and 'status' not in data:
-            # Set default status if neither is provided
             data['employment_status'] = 'Active'
             data['status'] = 'Active'
-                
-        # Convert numeric fields to correct types
-        if 'salary' in data and data['salary']:
-            try:
-                data['salary'] = float(data['salary'])
-            except ValueError:
-                pass
-                
-        # We do NOT convert ID fields to ObjectId for insertion 
-        # because schemas.py dictates bsonType "string" for relation IDs.
-                    
+
         # Add timestamps
         now = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
         data['created_at'] = now
         data['updated_at'] = now
-        
+
         # Insert into database
-        print(f"ðŸ” BACKEND: Inserting employee into database")
         result = employees.insert_one(data)
         inserted_id = str(result.inserted_id)
-        print(f"ðŸ” BACKEND: Employee created with ID: {inserted_id}")
-        
-        # Fetch the complete employee record to return
-        new_employee = employees.find_one({"_id": result.inserted_id})
+
+        # --- SYNC WITH TEAMS ---
+        team_id = data.get('team_id')
+        team_name = data.get('team')
+        if team_id or team_name:
+            try:
+                from bson import ObjectId as OId
+                t_query = {'_id': OId(str(team_id))} if team_id else {'name': team_name}
+                team_doc = teams_collection.find_one(t_query)
+                if team_doc:
+                    new_member = {
+                        'id': inserted_id,
+                        'name': f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or "Employee",
+                        'position': data.get('position', 'Employee'),
+                        'is_leader': False,
+                        'is_manager': False
+                    }
+                    teams_collection.update_one(
+                        {'_id': team_doc['_id']},
+                        {'$push': {'employees': new_member}}
+                    )
+            except Exception as e:
+                print(f'Sync error: {e}')
+
+        new_employee = employees.find_one({'_id': result.inserted_id})
         if new_employee:
-            # Create a proper response with the complete employee data
-            response_data = {
+            return JsonResponse({
                 'message': 'Employee created successfully',
                 'id': inserted_id,
                 '_id': inserted_id,
-                # Include all the employee data
                 **serialize_document(new_employee)
-            }
-            print(f"ðŸ” BACKEND: Returning employee data: {response_data}")
-            response = JsonResponse(response_data, status=201)
-            response["Access-Control-Allow-Origin"] = "*"
-            response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            return response
-        else:
-            # If the employee couldn't be found (very unlikely), return just the ID
-            print(f"âš ï¸ BACKEND: Created employee not found in database")
-            response = JsonResponse({
-                'message': 'Employee created successfully',
-                'id': inserted_id,
-                '_id': inserted_id
             }, status=201)
-            response["Access-Control-Allow-Origin"] = "*"
-            response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            return response
-            
+        return JsonResponse({'message': 'Employee created successfully', 'id': inserted_id}, status=201)
+
     except Exception as e:
-        print(f"âŒ BACKEND: Error creating employee: {str(e)}")
-        print(f"âŒ BACKEND: Traceback: {import_traceback.format_exc()}")
-        return JsonResponse({
-            'error': 'Server error',
-            'message': str(e)
-        }, status=500)
+        import traceback
+        return JsonResponse({'error': 'Server error', 'message': str(e), 'traceback': traceback.format_exc()}, status=500)
 
 @csrf_exempt
 @require_http_methods(["PUT"])
@@ -527,28 +534,60 @@ def partial_update_employee(request, employee_id):
     Updates an employee record (partial update).
     
     Endpoint: PATCH /api/employees/{employee_id}/partial/
-    
-    Path Parameters:
-        - employee_id: The unique identifier of the employee
-    
-    Request Body:
-        - Partial employee object with only fields to update
-    
-    Response:
-        {
-            "message": "Employee updated successfully",
-            ... updated employee data
-        }
-    
-    Error Responses:
-        - 404: Employee not found
-        - 400: Invalid request data
-        - 500: Server error
-    
-    Notes:
-        - Only updates the fields provided in the request
-        - Updates 'updated_at' timestamp automatically
     """
+    try:
+        data = json.loads(request.body)
+        user_role = (getattr(request, 'role', '') or '').strip().lower()
+        is_admin = user_role in ['admin', 'administrator']
+        is_admin_or_hr = user_role in ['admin', 'hr', 'administrator', 'manager']
+        
+        # 1. DEFINE RESTRICTED FIELDS (Only Admin can change role_id or employee_id)
+        RESTRICTED_FIELDS = ['role_id', 'employee_id']
+        
+        # 2. CHECK FOR UNAUTHORIZED UPDATES
+        if not is_admin:
+            restricted_fields_attempted = [
+                f for f in RESTRICTED_FIELDS
+                if f in data and data[f] not in (None, '', [], {})
+            ]
+            
+            if restricted_fields_attempted:
+                return JsonResponse({
+                    'error': 'Unauthorized',
+                    'message': f'Only Administrators can modify system identifier/role fields: {", ".join(restricted_fields_attempted)}'
+                }, status=403)
+                
+        # 3. HANDLE ROLE SYNC (If Admin is changing the role)
+        if 'role_id' in data and is_admin:
+            try:
+                emp_query = {}
+                try:
+                    emp_query = {'_id': ObjectId(employee_id)}
+                except Exception:
+                    emp_query = {'employee_id': employee_id}
+                
+                employee = employees.find_one(emp_query)
+                if employee:
+                    emp_physical_id = employee.get('employee_id')
+                    user_doc = None
+                    if emp_physical_id:
+                        user_doc = users.find_one({'employee_id': emp_physical_id})
+                    if not user_doc:
+                        user_doc = users.find_one({'employee_id': str(employee['_id'])})
+                    if not user_doc and employee.get('email'):
+                        user_doc = users.find_one({'email': employee.get('email')})
+                    
+                    if user_doc:
+                        users.update_one(
+                            {'_id': user_doc['_id']},
+                            {'$set': {'role_id': data['role_id']}}
+                        )
+            except Exception as e:
+                print(f"ERROR updating role: {str(e)}")
+                
+    except Exception:
+        pass
+        
     return employee_crud['partial_update_item'](request, employee_id)
 
 @csrf_exempt

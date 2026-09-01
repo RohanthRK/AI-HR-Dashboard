@@ -14,6 +14,13 @@ class Team(models.Model):
         null=True, 
         blank=True
     )
+    manager = models.ForeignKey(
+        Employee,
+        related_name='team_manager',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
     members = models.ManyToManyField(
         Employee,
         related_name='teams',

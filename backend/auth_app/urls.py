@@ -7,9 +7,10 @@ from . import views
 urlpatterns = [
     path('login/', views.login, name='login'),
     path('register/', views.register, name='register'),
-    path('roles/', views.get_roles, name='get_roles'),
-    # Note: create_role shares the same path but uses POST
-    path('roles/', views.create_role, name='create_role'), 
-    path('roles/<str:role_id>/', views.update_role, name='update_role'),
-    path('roles/<str:role_id>/', views.delete_role, name='delete_role'),
+    path('users/', views.get_users, name='get_users'),
+    path('users/<str:user_id>/', views.update_user, name='update_user'),
+    path('users/<str:user_id>/delete/', views.delete_user, name='delete_user'),
+    path('users/<str:user_id>/reset-password/', views.reset_password, name='reset_password'),
+    path('roles/', views.roles_handler, name='roles_handler'),
+    path('roles/<str:role_id>/', views.role_detail_handler, name='role_detail_handler'),
 ]

@@ -22,7 +22,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import axios from 'axios';
+import axios from '../../services/api';
 import {
   BarChart,
   Bar,

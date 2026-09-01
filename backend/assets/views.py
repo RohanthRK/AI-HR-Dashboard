@@ -22,12 +22,27 @@ def handle_assets(request):
         query = {}
         # Privacy filter: Only Admins can see all assets
         if user_role != 'admin':
+            user_email = ""
             if employee_id:
-                query['employee_id'] = employee_id
-            elif user_id:
-                query['user_id'] = user_id
+                from hr_backend.db import employees
+                employee = employees.find_one({'employee_id': employee_id})
+                if employee:
+                    user_email = employee.get('email', '')
+            
+            username = request.user_info.get('username', '') if hasattr(request, 'user_info') else ''
+            
+            # Match current user's employee_id, email, or username against assignedTo
+            or_conditions = []
+            if employee_id:
+                or_conditions.append({'assignedTo': employee_id})
+            if user_email:
+                or_conditions.append({'assignedTo': user_email})
+            if username:
+                or_conditions.append({'assignedTo': username})
+                
+            if or_conditions:
+                query['$or'] = or_conditions
             else:
-                # If no ID, return empty to be safe
                 return JsonResponse({'success': True, 'assets': []})
 
         assets = list(assets_collection.find(query))
@@ -36,6 +51,8 @@ def handle_assets(request):
         return JsonResponse({'success': True, 'assets': assets})
         
     elif request.method == 'POST':
+        if user_role != 'admin':
+            return JsonResponse({'success': False, 'error': 'Permission denied. Admins only.'}, status=403)
         try:
             data = json.loads(request.body)
             # Automatic ownership tagging
@@ -58,11 +75,12 @@ def handle_assets(request):
 
 @csrf_exempt
 def handle_asset_detail(request, asset_id):
-    """
-    GET: Retrieve specific asset
-    PUT/PATCH: Update asset details (e.g. assignment)
-    DELETE: Remove asset from inventory
-    """
+    user_role = getattr(request, 'role', '').lower()
+    
+    if request.method in ['PUT', 'PATCH', 'DELETE']:
+        if user_role != 'admin':
+            return JsonResponse({'success': False, 'error': 'Permission denied. Admins only.'}, status=403)
+
     try:
         obj_id = ObjectId(asset_id)
     except:

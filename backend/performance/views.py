@@ -72,11 +72,20 @@ def create_pip(request):
                 'end_date': data.get('end_date', ''),
                 'status': data.get('status', 'In Progress'),
                 'goals': data.get('goals', []),
-                'employee_notes': '',
-                'manager_notes': data.get('manager_notes', ''),
+                'notes': [], # Persistent log of notes
                 'created_at': datetime.utcnow().isoformat(),
                 'updated_at': datetime.utcnow().isoformat()
             }
+            
+            # Initial note if provided
+            initial_note = data.get('manager_notes') or data.get('description')
+            if initial_note:
+                new_pip['notes'].append({
+                    'text': initial_note,
+                    'author': 'System / Manager',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'role': 'manager'
+                })
             
             result = collection.insert_one(new_pip)
             new_pip['_id'] = str(result.inserted_id)
@@ -147,7 +156,46 @@ def pip_detail(request, pip_id):
                     if key in data:
                         update_fields[key] = data[key]
             
-            collection.update_one({'_id': pid}, {'$set': update_fields})
+            # Find author name
+            author_name = "User"
+            emp_doc = db.employees.find_one({'$or': [{'employee_id': employee_id_auth}, {'user_id': user_id}]})
+            if emp_doc:
+                author_name = f"{emp_doc.get('first_name', '')} {emp_doc.get('last_name', '')}".strip() or author_name
+            else:
+                user_doc = db.users.find_one({'_id': ObjectId(user_id)})
+                if user_doc:
+                    author_name = user_doc.get('username') or user_doc.get('email', author_name)
+
+            # Prepare notes to push
+            notes_to_push = []
+            
+            # Auto-log status changes
+            new_status = data.get('status')
+            if new_status and new_status != pip.get('status'):
+                notes_to_push.append({
+                    'text': f"Status changed from {pip.get('status', 'In Progress')} to {new_status}",
+                    'author': author_name,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'role': 'system'
+                })
+
+            # Append new manual note if provided
+            new_note = data.get('new_note')
+            if new_note:
+                notes_to_push.append({
+                    'text': new_note,
+                    'author': author_name,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'role': user_role
+                })
+
+            # Execute updates
+            update_query = {'$set': update_fields}
+            if notes_to_push:
+                update_query['$push'] = {'notes': {'$each': notes_to_push}}
+            
+            collection.update_one({'_id': pid}, update_query)
+
             updated_pip = collection.find_one({'_id': pid})
             updated_pip['_id'] = str(updated_pip['_id'])
             return JsonResponse({'status': 'success', 'data': updated_pip})

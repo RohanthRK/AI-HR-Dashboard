@@ -282,12 +282,14 @@ const EmployeeList = () => {
           />
           
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <FormControl size="small" sx={{ minWidth: 160 }}>
               <InputLabel>Department</InputLabel>
               <Select
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
                 label="Department"
+                autoWidth
+                MenuProps={{ PaperProps: { style: { maxHeight: 300 } } }}
               >
                 <MenuItem value="all">All Departments</MenuItem>
                 {departments.map((dept) => (
@@ -298,12 +300,14 @@ const EmployeeList = () => {
               </Select>
             </FormControl>
             
-            <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <FormControl size="small" sx={{ minWidth: 140 }}>
               <InputLabel>Status</InputLabel>
               <Select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 label="Status"
+                autoWidth
+                MenuProps={{ PaperProps: { style: { maxHeight: 300 } } }}
               >
                 <MenuItem value="all">All Statuses</MenuItem>
                 <MenuItem value="Active">Active</MenuItem>
@@ -312,12 +316,14 @@ const EmployeeList = () => {
               </Select>
             </FormControl>
             
-            <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <FormControl size="small" sx={{ minWidth: 130 }}>
               <InputLabel>Role</InputLabel>
               <Select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
                 label="Role"
+                autoWidth
+                MenuProps={{ PaperProps: { style: { maxHeight: 300 } } }}
               >
                 <MenuItem value="all">All Roles</MenuItem>
                 {roles.map((role) => (

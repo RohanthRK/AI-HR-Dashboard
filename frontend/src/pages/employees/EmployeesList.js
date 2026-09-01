@@ -265,13 +265,14 @@ const EmployeesList = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <FilterIcon sx={{ mr: 1, color: 'action.active' }} />
-              <TextField
+                            <TextField
                 select
                 label="Status"
                 size="small"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                sx={{ minWidth: 120 }}
+                sx={{ minWidth: 130 }}
+                SelectProps={{ autoWidth: true, MenuProps: { PaperProps: { style: { maxHeight: 300 } } } }}
               >
                 <MenuItem value="all">All Statuses</MenuItem>
                 <MenuItem value="Active">Active</MenuItem>
@@ -282,13 +283,14 @@ const EmployeesList = () => {
             
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <FilterIcon sx={{ mr: 1, color: 'action.active' }} />
-              <TextField
+                            <TextField
                 select
                 label="Department"
                 size="small"
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
-                sx={{ minWidth: 150 }}
+                sx={{ minWidth: 160 }}
+                SelectProps={{ autoWidth: true, MenuProps: { PaperProps: { style: { maxHeight: 300 } } } }}
               >
                 <MenuItem value="all">All Departments</MenuItem>
                 {departments.map((dept) => (
@@ -301,13 +303,14 @@ const EmployeesList = () => {
             
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <SortIcon sx={{ mr: 1, color: 'action.active' }} />
-              <TextField
+                            <TextField
                 select
                 label="Sort By"
                 size="small"
                 value={sortOption}
                 onChange={(e) => setSortOption(e.target.value)}
-                sx={{ minWidth: 150 }}
+                sx={{ minWidth: 160 }}
+                SelectProps={{ autoWidth: true, MenuProps: { PaperProps: { style: { maxHeight: 300 } } } }}
               >
                 <MenuItem value="name_asc">Name (A-Z)</MenuItem>
                 <MenuItem value="name_desc">Name (Z-A)</MenuItem>

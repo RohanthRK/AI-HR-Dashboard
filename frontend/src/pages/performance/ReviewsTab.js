@@ -7,13 +7,14 @@ import {
   Paper
 } from '@mui/material';
 import MyReviews from '../reviews/MyReviews';
+import MyPerformanceReports from '../reviews/MyPerformanceReports';
 import TeamPerformanceReview from '../reviews/TeamPerformanceReview';
 import Reviews from '../reviews/Reviews';
 import { useAuth } from '../../contexts/AuthContext';
 
 const ReviewsTab = () => {
   const { currentUser } = useAuth();
-  const [view, setView] = useState('my');
+  const [view, setView] = useState('performance');
   
   const isManager = ['Admin', 'Manager', 'HR'].includes(currentUser?.role);
 
@@ -46,13 +47,15 @@ const ReviewsTab = () => {
             }
           }}
         >
-          <ToggleButton value="my">MY REVIEWS</ToggleButton>
+          <ToggleButton value="performance">MY PERFORMANCE</ToggleButton>
+          {isManager && <ToggleButton value="my">REVIEW TASKS</ToggleButton>}
           {isManager && <ToggleButton value="team">TEAM REVIEWS</ToggleButton>}
           {isManager && <ToggleButton value="admin">INDIVIDUAL REVIEWS</ToggleButton>}
         </ToggleButtonGroup>
       </Box>
 
       <Box sx={{ mt: 2 }}>
+        {view === 'performance' && <MyPerformanceReports isComponent={true} />}
         {view === 'my' && <MyReviews isComponent={true} />}
         {view === 'team' && <TeamPerformanceReview isComponent={true} />}
         {view === 'admin' && <Reviews isComponent={true} />}

@@ -49,6 +49,7 @@ def handle_expenses(request):
             # Default status
             data['status'] = data.get('status', 'Pending')
             data['submittedAt'] = datetime.utcnow().isoformat()
+            data['comments'] = []
             
             result = expenses_collection.insert_one(data)
             data['_id'] = str(result.inserted_id)
@@ -66,39 +67,80 @@ def handle_expense_detail(request, expense_id):
     PUT/PATCH: Update expense (e.g. approve/reject)
     DELETE: Remove expense
     """
+    user_id = getattr(request, 'user_id', None)
+    employee_id = getattr(request, 'employee_id', None)
+    user_role = getattr(request, 'role', '').lower()
+
     try:
         obj_id = ObjectId(expense_id)
     except:
         return JsonResponse({'success': False, 'error': 'Invalid ID format'}, status=400)
 
-    if request.method == 'GET':
-        expense = expenses_collection.find_one({'_id': obj_id})
-        if expense:
-            expense['_id'] = str(expense['_id'])
-            return JsonResponse({'success': True, 'expense': expense})
+    expense = expenses_collection.find_one({'_id': obj_id})
+    if not expense:
         return JsonResponse({'success': False, 'error': 'Expense not found'}, status=404)
+
+    if request.method == 'GET':
+        expense['_id'] = str(expense['_id'])
+        return JsonResponse({'success': True, 'expense': expense})
 
     elif request.method in ['PUT', 'PATCH']:
         try:
             data = json.loads(request.body)
-            # Cannot update ID
             data.pop('_id', None) 
-            data['updatedAt'] = datetime.utcnow().isoformat()
             
-            result = expenses_collection.update_one(
-                {'_id': obj_id},
-                {'$set': data}
-            )
+            # Special case for comment updates
+            if '/comment' in request.path:
+                is_owner = (employee_id and str(expense.get('employee_id')) == str(employee_id)) or \
+                           (user_id and str(expense.get('user_id')) == str(user_id))
+                if user_role != 'admin' and not is_owner:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Permission denied. Only the assigned employee or Admin can write comments.'
+                    }, status=403)
+                
+                comment_text = data.get('comment')
+                if comment_text:
+                    result = expenses_collection.update_one(
+                        {'_id': obj_id},
+                        {'$push': {'comments': {
+                            'text': comment_text,
+                            'createdAt': datetime.utcnow().isoformat(),
+                            'author': request.user_info.get('username', 'User') if hasattr(request, 'user_info') else 'User'
+                        }}, '$set': {'updatedAt': datetime.utcnow().isoformat()}}
+                    )
+            else:
+                # Regular update
+                if 'status' in data:
+                    if user_role != 'admin':
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'Permission denied. Only Admin can change the status.'
+                        }, status=403)
+                
+                is_owner = (employee_id and str(expense.get('employee_id')) == str(employee_id)) or \
+                           (user_id and str(expense.get('user_id')) == str(user_id))
+                if user_role != 'admin' and not is_owner:
+                    return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+                data['updatedAt'] = datetime.utcnow().isoformat()
+                result = expenses_collection.update_one(
+                    {'_id': obj_id},
+                    {'$set': data}
+                )
             
-            if result.modified_count:
-                updated_expense = expenses_collection.find_one({'_id': obj_id})
-                updated_expense['_id'] = str(updated_expense['_id'])
-                return JsonResponse({'success': True, 'expense': updated_expense})
-            return JsonResponse({'success': False, 'error': 'Expense not found or no changes made'}, status=404)
+            updated_expense = expenses_collection.find_one({'_id': obj_id})
+            updated_expense['_id'] = str(updated_expense['_id'])
+            return JsonResponse({'success': True, 'expense': updated_expense})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
     elif request.method == 'DELETE':
+        is_owner = (employee_id and str(expense.get('employee_id')) == str(employee_id)) or \
+                   (user_id and str(expense.get('user_id')) == str(user_id))
+        if user_role != 'admin' and not is_owner:
+            return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
         result = expenses_collection.delete_one({'_id': obj_id})
         if result.deleted_count:
             return JsonResponse({'success': True, 'message': 'Expense deleted'})

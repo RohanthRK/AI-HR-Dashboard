@@ -62,7 +62,7 @@ import {
   ViewList as ViewListIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
-import axios from 'axios';
+import axios from '../../services/api';
 
 
 // Styled components

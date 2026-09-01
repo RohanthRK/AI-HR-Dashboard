@@ -25,9 +25,6 @@ import { useTheme } from '@mui/material/styles';
 import AttendanceCalendar from './AttendanceCalendar';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import axios from 'axios';
 
 // Tab Panel component
 function TabPanel(props) {
@@ -64,9 +61,6 @@ const Attendance = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
 
-  // AI Anomalies states
-  const [aiInsightsLoading, setAiInsightsLoading] = useState(true);
-  const [aiInsights, setAiInsights] = useState(null);
 
   // Tab state
   const [tabValue, setTabValue] = useState(0);
@@ -90,19 +84,7 @@ const Attendance = () => {
     }
   }, [enqueueSnackbar]);
 
-  // Fetch AI Anomalies
-  const fetchAiInsights = useCallback(async () => {
-    setAiInsightsLoading(true);
-    try {
-      const response = await axios.get('/api/ai/attendance-anomalies/');
-      setAiInsights(response.data);
-    } catch (error) {
-      console.error("Error fetching AI Insights:", error);
-      // Suppress showing error snackbar for AI as it's secondary
-    } finally {
-      setAiInsightsLoading(false);
-    }
-  }, []);
+
 
   // Fetch attendance history
   const fetchHistory = useCallback(async (currentPage, currentRowsPerPage) => {
@@ -131,8 +113,7 @@ const Attendance = () => {
   useEffect(() => {
     fetchStatus();
     fetchHistory(page, rowsPerPage);
-    fetchAiInsights();
-  }, [fetchStatus, fetchHistory, fetchAiInsights, page, rowsPerPage]); // Rerun if page/rowsPerPage changes
+  }, [fetchStatus, fetchHistory, page, rowsPerPage]); // Rerun if page/rowsPerPage changes
 
   // Handlers for Clock In/Out (slightly modified to refresh status/history)
   const handleClockIn = async () => {
@@ -332,48 +313,7 @@ const Attendance = () => {
         </Grid>
       </Grid>
 
-      {/* --- AI Insights Section --- */}
-      {aiInsights && (
-        <Paper className="brutal-border brutal-shadow" sx={{ p: 3, mb: 3, bgcolor: 'background.paper' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <SmartToyIcon sx={{ color: '#FF6B6B', fontSize: 32 }} />
-            <Typography variant="h5" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
-              AI Attendance Insights
-            </Typography>
-          </Box>
-          <Grid container spacing={3}>
-            {/* Prediction */}
-            <Grid item xs={12} md={4}>
-              <Box className="brutal-border" sx={{ p: 2, height: '100%', backgroundColor: '#4ECDC4', color: '#000' }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>AI FORECAST</Typography>
-                <Typography variant="body1" sx={{ mt: 1, fontWeight: 700 }}>{aiInsights.prediction}</Typography>
-                <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>HEALTH SCORE:</Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 900 }}>{aiInsights.overall_health_score}/100</Typography>
-                </Box>
-              </Box>
-            </Grid>
-            {/* Anomalies List */}
-            <Grid item xs={12} md={8}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {aiInsights.anomalies.map((anomaly, idx) => (
-                  <Box key={idx} className="brutal-border" sx={{ p: 2, backgroundColor: anomaly.severity === 'high' ? '#FF6B6B' : '#FFD166', color: '#000', display: 'flex', gap: 2 }}>
-                    <WarningAmberIcon sx={{ fontSize: 40 }} />
-                    <Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>{anomaly.type}</Typography>
-                        <Chip label={anomaly.date} size="small" sx={{ fontWeight: 800, border: '2px solid #000', borderRadius: 0, backgroundColor: '#fff' }} />
-                      </Box>
-                      <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>{anomaly.description}</Typography>
-                      <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>SUGGESTED ACTION: {anomaly.suggestion}</Typography>
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
+
 
       {/* --- Tab Navigation --- */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>

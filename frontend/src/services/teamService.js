@@ -95,18 +95,14 @@ const teamService = {
   // Get all teams from MongoDB
   getAllTeams: async () => {
     try {
-      console.log('Fetching all teams...');
-      try {
-        const response = await axios.get(`${API_URL}/api/teams/`);
-        console.log('Teams fetched successfully:', response.data);
-        return response.data;
-      } catch (apiError) {
-        console.warn('API call for teams failed, using mock data:', apiError.message);
-        return mockTeams;
-      }
+      console.log('Fetching all teams from MongoDB...');
+      const response = await teamAPI.get('/teams/mongodb_list/');
+      console.log('Teams fetched successfully from MongoDB:', response.data);
+      return response.data;
     } catch (error) {
       console.error('Error in getAllTeams:', error);
-      return mockTeams;
+      // We throw the error instead of returning mock data to avoid hiding failures
+      throw error;
     }
   },
   
@@ -195,7 +191,7 @@ const teamService = {
   // Get all departments from MongoDB
   getAllDepartments: async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/employees/departments/mongodb/`);
+      const response = await teamAPI.get('/employees/departments/mongodb/');
       return response.data;
     } catch (error) {
       console.error('Error fetching departments:', error);

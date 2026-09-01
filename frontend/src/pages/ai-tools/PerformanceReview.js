@@ -66,7 +66,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
-import axios from 'axios';
+import axios from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import teamService from '../../services/teamService';
 
@@ -818,7 +818,7 @@ const PerformanceReview = () => {
             name: `${employee.first_name || ''} ${employee.last_name || ''}`.trim(),
             department: employee.department || 'Unknown',
             position: employee.position || 'Employee',
-            skills: employee.skills || ['Technical Skills'],
+            skills: (employee.skills || ['Technical Skills']).map(s => typeof s === 'string' ? s : (s?.name || 'Skill')),
             performance: employee.performance || 4,
             growthPotential: employee.growth_potential || 'Medium',
             // Add other required fields with defaults
