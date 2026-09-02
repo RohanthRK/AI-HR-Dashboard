@@ -2,7 +2,7 @@
 MongoDB connection utility for the HR Dashboard application.
 """
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, ConnectionFailure, ServerSelectionTimeoutError
 import os
 from django.conf import settings
 import logging
@@ -13,8 +13,32 @@ logger = logging.getLogger(__name__)
 MONGODB_URI = getattr(settings, 'MONGODB_URI', os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/'))
 MONGODB_NAME = getattr(settings, 'MONGODB_NAME', os.environ.get('MONGODB_NAME', 'hr_dashboard_db'))
 
-# Connect to MongoDB
-client = MongoClient(MONGODB_URI)
+LOCALHOST_URI = 'mongodb://localhost:27017/'
+
+def _connect(uri: str, name: str, timeout_ms: int = 3000):
+    """Attempt a MongoClient connection and verify with a ping."""
+    c = MongoClient(uri, serverSelectionTimeoutMS=timeout_ms)
+    c[name].command('ping')   # raises ServerSelectionTimeoutError if unreachable
+    return c
+
+# Try primary URI (Atlas), fall back to localhost
+try:
+    client = _connect(MONGODB_URI, MONGODB_NAME)
+    logger.info(f"Connected to MongoDB: {MONGODB_URI.split('@')[-1] if '@' in MONGODB_URI else MONGODB_URI}")
+except (ConnectionFailure, ServerSelectionTimeoutError, Exception) as e:
+    if MONGODB_URI != LOCALHOST_URI:
+        logger.warning(f"Could not connect to primary MongoDB URI ({e}). Falling back to localhost.")
+        try:
+            client = _connect(LOCALHOST_URI, MONGODB_NAME)
+            MONGODB_URI = LOCALHOST_URI
+            logger.info("Connected to MongoDB: localhost:27017 (fallback)")
+        except Exception as e2:
+            logger.error(f"Could not connect to localhost MongoDB either: {e2}")
+            raise
+    else:
+        logger.error(f"Could not connect to MongoDB: {e}")
+        raise
+
 db = client[MONGODB_NAME]
 
 # Define collection references

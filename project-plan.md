@@ -1,130 +1,227 @@
-**AI-HR-Dashboard Project Plan for Cursor AI**
+# AI-HR-Dashboard — Project Plan
 
 ---
 
-This document serves as a detailed blueprint for **Cursor AI** to generate an end‑to‑end AI‑powered HR Dashboard. It describes each feature, database collection, and frontend design in depth—with modern, minimalist aesthetics and maximum functionality.
-
-## 1. Project Vision & Input to Cursor
-
-Provide this plan verbatim to Cursor AI. It should build:
-- A **Django** backend exposing clean REST endpoints (no DRF serializers; implement manual request/response parsing and validation).
-- A **ReactJS** frontend as a Single‑Page Application (SPA) with a modern, minimalist look: ample white space, intuitive iconography, and feature‑rich, modular components.
-- A **MongoDB** database accessed via **PyMongo**, with dedicated collections for every distinct domain object.
-
-
-## 2. Detailed Feature Descriptions
-
-### 2.1 Authentication & Authorization
-- **Login / JWT Issuance:** Endpoint `POST /api/auth/login` accepts JSON with username/password, validates credentials, returns JWT.
-- **Role Management:** Endpoints for assigning roles (Admin, Manager, Employee) under `/api/auth/roles`. No serializers—use manual `json.loads` and `JsonResponse`.
-- **Token Middleware:** Custom Django middleware to verify JWT on protected routes.
-
-### 2.2 Employee Management
-- **Employee CRUD:** Endpoints `/api/employees`: GET (list/filter), POST (create), PUT (full update), PATCH (partial update), DELETE.
-- **Profile Document Uploads:** Handle multipart/form-data at `/api/employees/{id}/documents`. Store file metadata in a dedicated **Documents** collection.
-- **Role & Department Assignment:** Drop‑down selectors on frontend populated via `/api/departments` and `/api/roles`.
-
-### 2.3 Attendance & Time Tracking
-- **Clock-In/Clock-Out:** Two buttons triggering `POST /api/attendance/clock-in` and `/clock-out`, recording timestamps.
-- **Location Verification:** Optional geolocation on frontend; store `latitude`, `longitude`, `ip_address` in **Attendance** collection.
-- **Calendar View:** React calendar grid component showing days with colored dots (green present, red absent).
-
-### 2.4 Leave Management
-- **Request Flow:** Employee calls `POST /api/leaves/request`, supplying type, dates, reason. Manager views `/api/leaves/pending` and approves/rejects via `PUT /api/leaves/{id}`.
-- **Balance Calculation:** Compute leave balances on the fly by aggregating approved leaves from **Leaves** collection.
-- **Notification:** Insert notifications into a **Notifications** collection; frontend displays a bell icon badge.
-
-### 2.5 Performance Reviews
-- **Review Scheduling:** Admin creates review windows via `POST /api/reviews/schedule`. Stored in **ReviewPeriods** collection.
-- **Feedback Submission:** Managers and peers submit feedback to `/api/reviews/{periodId}/feedback`, storing documents in **Reviews**.
-- **Score Aggregation:** Compute average scores in an **Analytics** collection for quick dashboard display.
-
-### 2.6 Payroll Overview
-- **Salary Data:** Store components in **Payroll** collection. Endpoint `/api/payroll/{employeeId}/{month}` returns JSON breakdown.
-- **Payslip Generation:** Backend uses a PDF library (ReportLab) to render payslip; stores `pdf_url` in **Documents**.
-- **Bulk Export:** Endpoint `/api/payroll/export?month=YYYY-MM` generates a CSV and places metadata in **Exports** collection.
-
-### 2.7 AI & Analytics Module
-- **Attrition Prediction:** Trigger `POST /api/ai/attrition` to run the model, storing results in **AIInsights**.
-- **Sentiment Analysis:** Pipeline ingests feedback text from **Reviews**, runs NLP, writes results back.
-- **Skill-Gap Analysis:** Compare required vs. existing skills from **JobDescriptions** and **EmployeeSkills** collections.
-- **Resume Parsing:** Endpoint `/api/ai/parse-resume` accepts a PDF, extracts structured fields into **Candidates**.
-
-### 2.8 Notifications & Alerts
-- **In-App Alerts:** Store each alert in **Notifications** with fields: `userId`, `type`, `message`, `read`.
-- **Email Integration:** Django SMTP tasks send mails asynchronously (Celery) when key events occur.
-
-### 2.9 Reports & Dashboards
-- **Custom Charts:** Frontend uses a chart library (Recharts) to display data from `/api/reports/*`.
-- **Export Options:** Buttons to download PNG/PDF via canvas capture or backend image rendering.
-
-### 2.10 AI Chat Assistant
-- **Chat Widget:** Floating React component that opens a chat UI.
-- **Backend Proxy:** `/api/chat` forwards queries to an NLP model (e.g., OpenAI/Gemini) and logs transcripts in **ChatLogs**.
-
-
-## 3. MongoDB Collections (Expanded)
-
-1. **Users**: Authentication credentials and role link.
-2. **Roles**: Role definitions with permissions matrix.
-3. **Departments**: Department metadata.
-4. **Employees**: Core employee profiles.
-5. **Documents**: File metadata (type, URL, uploadDate, ownerRef).
-6. **Attendance**: Clock-in/out records with location.
-7. **Leaves**: Leave requests and statuses.
-8. **ReviewPeriods**: Scheduled performance review windows.
-9. **Reviews**: Individual feedback entries.
-10. **Payroll**: Monthly salary components and net pay.
-11. **Exports**: Tracking CSV/Excel export jobs.
-12. **Notifications**: In-app alert records.
-13. **AIInsights**: Results of attrition, sentiment, training models.
-14. **ChatLogs**: Transcripts of AI assistant conversations.
-15. **JobDescriptions**: Role requirements for skill analysis.
-16. **EmployeeSkills**: Mappings of employee to skills level.
-17. **Candidates**: Parsed resume data for onboarding.
-18. **Settings**: System‑wide configuration (leave types, review criteria).
-
-
-## 4. Frontend Page & Component Design
-
-- **Global Layout:** 
-  - Top nav bar with brand logo, user avatar dropdown, notifications icon.
-  - Left sidebar collapsible menu (icons + labels).
-  - Content area with card‑based modules.
-
-- **Color & Typography:** 
-  - Neutral base (white/light gray), accent color for CTAs.
-  - Sans‑serif font, clear hierarchy: H1 (xl), H2 (lg), body (base).
-
-- **Key Pages:**
-  1. **Login**: Centered card, only essential fields.
-  2. **Dashboard**: Grid of widgets (headcount, attrition gauge, pending leaves).
-  3. **Directory**: Table with search, inline filters, profile drawer slide‑out.
-  4. **Attendance**: Calendar Component + Live clock status.
-  5. **Leaves**: Request form modal, approval queue list view.
-  6. **Reviews**: Timeline view of periods, expandable feedback panels.
-  7. **Payroll**: Month selector, salary breakdown cards.
-  8. **Analytics**: Filter toolbar + chart panels (line, bar, radar).
-  9. **Chat Assistant**: Persisted conversation sidebar.
-  10. **Settings**: Tabbed interface for system config.
-
-- **Interactions:** 
-  - Hover states on buttons/cards.
-  - Transitions for sidebar toggle (Framer Motion).
-  - Lazy‑load heavy charts.
-
-
-## 5. Future Scope
-
-1. **Mobile App:** React Native or Flutter client using same APIs.
-2. **Single Sign‑On (SSO):** OAuth2 / SAML integration.
-3. **Advanced AI:** Custom transformer models on‑premise.
-4. **Integration Hub:** Connect to Slack, Teams, Workday, SAP.
-5. **Voice Interface:** Voice‑enabled clock‑in and voice‑bot.
-6. **Blockchain Records:** Immutable attendance ledger.
-7. **Gamification:** Employee engagement badges and leaderboards.
+> **Status as of September 2026:** Core HR platform is feature-complete and deployed. AI integration is active. The focus going forward is on expanding AI capabilities, mobile readiness, and third-party integrations.
 
 ---
 
-*Cursor AI, please consume this plan to scaffold files, API endpoints, React components, and MongoDB collection definitions. Ready to generate code!*
+## 1. Project Vision
 
+Build an end-to-end, AI-powered HR Dashboard that:
+- Replaces manual HR workflows with smart, automated processes.
+- Provides a **Django** backend exposing clean REST endpoints (no DRF — manual request/response parsing with `JsonResponse`).
+- Provides a **ReactJS** SPA frontend with a modern, minimalist dark/light theme, glassmorphism UI, and Framer Motion animations.
+- Uses **MongoDB** via **PyMongo** — no ORM, direct collection queries.
+- Uses **Google Gemini API** for all AI features.
+- Supports **role-based access control** (Admin, Manager, Employee) enforced at API and UI level.
+
+---
+
+## 2. Feature Areas & Implementation Status
+
+### 2.1 Authentication & Authorization ✅
+- JWT issuance on login, custom Django middleware for token verification.
+- Role management (Admin, Manager, Employee) enforced at both backend and frontend.
+- User provisioning portal (Signup.js) with dual-mode:
+  - **Mode 1:** Full employee onboarding — creates Employee + User account simultaneously.
+  - **Mode 2:** Link an existing unlinked employee to a new user account.
+- Auto-generated employee IDs, usernames, and passwords with copy-to-clipboard support.
+- Password change and profile update endpoints.
+
+### 2.2 Employee Management ✅
+- Full CRUD for employee profiles via `/api/employees/`.
+- Department CRUD via `/api/employees/departments/`.
+- Employee directory with search, sort, pagination.
+- Employee profile page: personal info, work details, skills, education, certifications, documents.
+- ManageSkillsModal for adding/removing skills from employee profiles.
+- Document upload and download via multipart/form-data.
+- ProfileEditModal for inline editing from the profile page.
+
+### 2.3 Team Management ✅
+- Create, edit, and delete teams.
+- Assign team manager/lead (stored as `manager_id` on team document).
+- Add/remove team members with live directory search.
+- Team detail page with member cards and manager highlight.
+- Teams list page with department grouping.
+
+### 2.4 Attendance & Time Tracking ✅
+- Clock-in / Clock-out with server-side timestamps.
+- Daily status: Present, Absent, Late, Work From Home, Half-Day.
+- Calendar view with color-coded attendance per day.
+- Admin view of all attendance records across employees.
+- Hours-worked calculation per record.
+
+### 2.5 Leave Management ✅
+- Employee submits leave request (type, dates, reason, half-day flag).
+- Leave types: Earned Leaves (18/year), Loss of Pay (LOP).
+- Manager and Admin can approve, reject, or cancel leaves.
+- Leave balance computed on-the-fly from `Leaves` collection.
+- Flexible employee ID resolution — handles ObjectId hex strings, business codes (EMP-XXXX), email, and user_id for matching.
+- Pending approvals view for managers and admins.
+- Leave cancellation by the employee.
+- Notification inserted to `Notifications` collection on status change.
+
+### 2.6 Payroll ✅
+- Monthly payroll records per employee (base, HRA, allowances, deductions, net pay).
+- Payslip PDF generation via ReportLab.
+- Bulk payroll export to CSV.
+- Admin payroll overview and per-employee payslip download.
+
+### 2.7 Performance & Reviews ✅
+- Review scheduling via ReviewPeriods collection.
+- Manager-submitted performance reviews per employee per period.
+- My Reviews page — employees see their own review history.
+- Team Performance Review workflow.
+- Employee Performance Review — deep drill-down per employee.
+- My Performance Reports — employee self-service performance summary.
+
+### 2.8 OKRs & PIPs ✅ (Performance module sub-tabs)
+- **OKR Tab:** Create objectives, add key results, track progress with percentage updates, update status (On Track, At Risk, Behind, Completed).
+- **PIP Tab:** Create PIPs for underperforming employees, set improvement goals and timelines, track acknowledgment.
+- **Skills Tab:** View and manage employee skills within the performance context.
+
+### 2.9 Expenses ✅
+- Employee expense submission with category, amount, receipt description.
+- Manager/Admin approval and rejection workflow.
+- Expense list with status filtering.
+
+### 2.10 Assets ✅
+- Company asset catalog.
+- Assign assets to employees.
+- Asset listing with filter by type and assignment status.
+
+### 2.11 Helpdesk / Support Tickets ✅
+- Employees submit tickets with category and priority.
+- HR/Admin resolves tickets with status updates (Open → In Progress → Resolved).
+- Ticket listing with filters.
+
+### 2.12 Notifications ✅
+- In-app notification system with bell icon badge.
+- Notifications inserted on leave status changes, ticket updates, etc.
+- Mark-as-read and notification panel.
+- NotificationContext for global state management.
+
+### 2.13 Dashboard ✅
+- Summary widgets: headcount, pending leaves, today's attendance, active teams.
+- Recharts-powered visual analytics (bar charts, line charts).
+- Role-aware content — employees see personal stats, admins see company-wide KPIs.
+
+### 2.14 Advanced Analytics ✅
+- Department-wise headcount distribution.
+- Attendance rate trends over time.
+- Leave utilization by department and type.
+- Payroll trends (monthly net pay comparison).
+- Custom filters by department and date range.
+
+---
+
+## 3. AI Features
+
+### 3.1 AI Resume Screening ✅
+- Upload PDF or DOCX resume in the Recruitment page.
+- Gemini API extracts candidate profile and scores against job requirements.
+- Async processing via Celery; status polling from frontend.
+- Results (score, summary, matched skills) stored in `Candidates` collection.
+
+### 3.2 AI Performance Review Generator ✅
+- AI Tools → Performance Review page.
+- User provides employee context (name, role, tenure, department, goals).
+- Gemini generates a full structured performance review draft.
+- Draft can be edited and submitted as an official review.
+
+### 3.3 Team Performance Review AI ✅
+- AI generates team-level performance summary from individual review data.
+- Available to Managers and Admins.
+
+### 3.4 HR Chatbot ✅
+- Floating chat widget (`HRChatbot.js`) embedded globally across all pages.
+- Powered by Gemini API via `/api/chat/`.
+- Answers HR questions in natural language (leave balances, policies, payslips).
+- Conversation transcripts stored in `ChatLogs` collection.
+
+### 3.5 Job Matching ✅
+- AI Tools → Job Matching page.
+- Compares employee or candidate skill profiles to open job requirements.
+- Returns match percentage and missing skills.
+
+### 3.6 Skills Assessment ✅
+- AI Tools → Skills Assessment page.
+- Gap analysis between current employee skills and target role requirements.
+- Generates a ranked list of skills to develop.
+
+### 3.7 Talent Insights ✅
+- AI Tools → Talent Insights page.
+- Attrition risk scoring based on tenure, leave patterns, and attendance.
+- High performer identification.
+- Visual talent heatmaps.
+
+---
+
+## 4. MongoDB Collections
+
+| Collection | Purpose |
+|---|---|
+| `Users` | Auth credentials, role, employee link |
+| `Employees` | Core employee profiles |
+| `Departments` | Department metadata |
+| `Teams` | Team composition (manager, members) |
+| `Attendance` | Daily clock-in/out records |
+| `Leaves` | Leave requests and statuses |
+| `Payroll` | Monthly salary components |
+| `ReviewPeriods` | Scheduled review windows |
+| `Reviews` | Individual review submissions |
+| `Objectives` | OKRs and key results |
+| `Notifications` | In-app alert records |
+| `AIInsights` | AI model outputs (attrition scores, etc.) |
+| `ChatLogs` | HR chatbot transcripts |
+| `JobDescriptions` | Role skill requirements |
+| `EmployeeSkills` | Employee-to-skill mappings |
+| `Candidates` | Recruitment pipeline with AI screening |
+| `expenses` | Expense records |
+| `assets` | Asset inventory |
+| `helpdesk_tickets` | Support ticket records |
+
+---
+
+## 5. Frontend Architecture
+
+- **Framework:** React.js SPA, bootstrapped with Create React App.
+- **Routing:** React Router v6 — role-aware route guards.
+- **State:** React Context (AuthContext, NotificationContext) for global state; component-level `useState`/`useEffect` for local state.
+- **Design System:** Material-UI (MUI) v5 with custom theme overrides for dark mode aesthetics.
+- **Animations:** Framer Motion for sidebar toggle, page transitions, and micro-interactions.
+- **Charts:** Recharts for all data visualizations.
+- **HTTP:** Axios with interceptors for automatic JWT injection.
+
+---
+
+## 6. Backend Architecture
+
+- **Framework:** Django 6.x (no DRF, no ORM for MongoDB).
+- **Database:** PyMongo direct queries on MongoDB `hr_dashboard_db`.
+- **Auth:** Custom `JWTAuthMiddleware` that decodes JWT on every request and attaches `request.user_id`, `request.role`, `request.employee_id`.
+- **AI:** `google-generativeai` Python SDK for all Gemini calls.
+- **Async:** Celery with Redis broker for long-running AI tasks (resume screening).
+- **File Uploads:** Django's `FileResponse` + MEDIA_ROOT storage.
+- **CORS:** `django-cors-headers` configured for `localhost:3000`.
+
+---
+
+## 7. Future Roadmap
+
+| Priority | Feature |
+|---|---|
+| 🔴 High | SSO / OAuth2 (Google, Microsoft) |
+| 🔴 High | Sentiment analysis on reviews and surveys |
+| 🟡 Medium | Predictive attrition model (fine-tuned) |
+| 🟡 Medium | Mobile app (React Native) |
+| 🟡 Medium | Slack / Microsoft Teams notifications |
+| 🟢 Low | Blockchain-backed attendance ledger |
+| 🟢 Low | Gamification (badges, leaderboards) |
+| 🟢 Low | Voice-enabled clock-in |
+| 🟢 Low | Integration hub (Workday, SAP, BambooHR) |
+
+---
+
+*Last updated: September 2026*
