@@ -13,6 +13,10 @@ class JWTAuthMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # Always allow OPTIONS requests to pass through for CORS preflight
+        if request.method == 'OPTIONS':
+            return self.get_response(request)
+
         # List of paths that don't require authentication
         public_paths = [
             '/api/auth/login',

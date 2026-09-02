@@ -78,11 +78,12 @@ const TeamDetail = () => {
         let teamDepartment = '';
         
         // Search through departments and teams
-        for (const dept of data.departments) {
-          const matchingTeam = dept.teams.find(team => team.id === id);
-          if (matchingTeam) {
-            // Format the team data to match our requirements
-            teamDepartment = dept.name;
+        if (data && Array.isArray(data.departments)) {
+          for (const dept of data.departments) {
+            const matchingTeam = (dept.teams || []).find(team => team.id === id);
+            if (matchingTeam) {
+              // Format the team data to match our requirements
+              teamDepartment = dept.name;
             const teamLeader = matchingTeam.employees.find(emp => emp.is_leader);
             const teamManager = matchingTeam.employees.find(emp => emp.is_manager);
 
@@ -138,6 +139,7 @@ const TeamDetail = () => {
             break;
           }
         }
+      }
         
         if (foundTeam) {
           setTeam(foundTeam);

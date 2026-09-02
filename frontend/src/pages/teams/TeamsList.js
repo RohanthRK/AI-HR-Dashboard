@@ -65,30 +65,37 @@ const TeamsList = () => {
         
         // Format teams from all departments into a flat list
         const allTeams = [];
-        data.departments.forEach(dept => {
-          dept.teams.forEach(team => {
-            allTeams.push({
-              id: team.id,
-              name: team.name,
-              department: dept.name,
-              description: `Team from ${dept.name} department`,
-              leader: team.leader || {
-                id: 0,
-                name: 'Not Assigned',
-                position: 'Team Lead'
-              },
-              manager: team.manager,
-              members: team.employees.map(employee => ({
-                id: employee.id,
-                name: employee.name,
-                position: employee.position || 'Team Member'
-              })),
-              members_count: team.employee_count,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            });
+        if (data && Array.isArray(data.departments)) {
+          data.departments.forEach(dept => {
+            if (dept && Array.isArray(dept.teams)) {
+              dept.teams.forEach(team => {
+                const members = Array.isArray(team.employees)
+                  ? team.employees.map(employee => ({
+                      id: employee.id,
+                      name: employee.name,
+                      position: employee.position || 'Team Member'
+                    }))
+                  : [];
+                allTeams.push({
+                  id: team.id,
+                  name: team.name,
+                  department: dept.name,
+                  description: `Team from ${dept.name} department`,
+                  leader: team.leader || {
+                    id: 0,
+                    name: 'Not Assigned',
+                    position: 'Team Lead'
+                  },
+                  manager: team.manager,
+                  members: members,
+                  members_count: team.employee_count !== undefined ? team.employee_count : members.length,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                });
+              });
+            }
           });
-        });
+        }
         
         setTeams(allTeams);
         setFilteredTeams(allTeams);

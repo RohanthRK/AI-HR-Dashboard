@@ -24,7 +24,8 @@ import aiService from '../../services/aiService';
 import employeeService from '../../services/employeeService';
 import axios from '../../services/api';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const rawUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const API_URL = rawUrl.endsWith('/api') ? rawUrl : `${rawUrl}/api`;
 
 const TeamForm = ({ team = null, isEdit = false }) => {
   const navigate = useNavigate();
