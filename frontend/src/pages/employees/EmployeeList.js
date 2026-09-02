@@ -102,7 +102,7 @@ const EmployeeList = () => {
     const testApiConnection = async () => {
       try {
         console.log('Testing API connectivity...');
-        const apiRoot = 'http://localhost:8000/api/';
+        const apiRoot = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/`;
         const endpoints = [
           '',  // API root
           'employees/',

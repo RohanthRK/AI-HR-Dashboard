@@ -120,7 +120,7 @@ const Dashboard = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isAdminOrManager = isManager();
-  const API_URL = 'http://localhost:8000/api';
+  const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api`;
 
   useEffect(() => {
     // Simulate progress loading for better UX

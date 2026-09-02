@@ -101,7 +101,7 @@ const Directory = () => {
       
       if (teamNames.length === 0) {
         try {
-          const teamRes = await fetch('http://localhost:8000/api/ai/team-stats/').then(r => r.json());
+          const teamRes = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/ai/team-stats/`).then(r => r.json());
           if (teamRes.departments) {
             teamRes.departments.forEach(dept => {
               (dept.teams || []).forEach(t => t.name && teamNames.push(t.name));

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api/leaves/';
+const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/leaves/`;
 
 // Create axios instance with default config
 const leaveAPI = axios.create({

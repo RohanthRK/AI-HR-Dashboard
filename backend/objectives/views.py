@@ -1,14 +1,11 @@
 import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
-from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime
+from hr_backend.db import db
 
-# MongoDB connection
-client = MongoClient(settings.MONGODB_URI)
-db = client[settings.MONGODB_NAME]
+# MongoDB collection
 collection = db.objectives
 
 @csrf_exempt

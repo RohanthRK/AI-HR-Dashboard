@@ -209,7 +209,7 @@ const TeamReview = ({ team, onClose, onStepChange }) => {
       try {
         setLoading(true);
           console.log('Fetching team members for team ID:', team.id);
-          const response = await axios.get(`http://localhost:8000/api/teams/${team.id}/`);
+          const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/teams/${team.id}/`);
           
           if (response.data && response.data.employees) {
             console.log('Fetched team members:', response.data.employees);
@@ -807,7 +807,7 @@ const PerformanceReview = () => {
         console.log('Fetching real employees for Performance Review...');
         
         // Use employeeService instead of aiService to get real employees
-        const employeesResponse = await axios.get('http://localhost:8000/api/employees/debug/');
+        const employeesResponse = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/employees/debug/`);
         
         if (employeesResponse.data && employeesResponse.data.employees && Array.isArray(employeesResponse.data.employees)) {
           console.log('Fetched employees data:', employeesResponse.data.employees);
