@@ -6,7 +6,6 @@ import {
   CircularProgress,
   Alert,
   IconButton,
-  Grid,
   Chip,
   Tooltip,
   alpha
@@ -18,14 +17,18 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import TimerIcon from '@mui/icons-material/Timer';
 import HelpIcon from '@mui/icons-material/Help';
+import CelebrationIcon from '@mui/icons-material/Celebration';
+import BeachAccessIcon from '@mui/icons-material/BeachAccess';
+import EventBusyIcon from '@mui/icons-material/EventBusy';
 import attendanceService from '../../services/attendanceService';
+import leaveService from '../../services/leaveService';
+import { isHolidayDate } from '../../utils/holidayUtils';
 import { useSnackbar } from 'notistack';
 import { 
   startOfMonth, 
   endOfMonth, 
   eachDayOfInterval, 
   format, 
-  isSameMonth, 
   isToday,
   isSameDay,
   subMonths,
@@ -38,10 +41,11 @@ const AttendanceCalendar = () => {
   const [error, setError] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [attendanceData, setAttendanceData] = useState([]);
+  const [leaveApplications, setLeaveApplications] = useState([]);
   const { enqueueSnackbar } = useSnackbar();
 
-  // Function to fetch attendance data for the current month
-  const fetchMonthlyAttendance = useCallback(async () => {
+  // Function to fetch attendance and approved leave data for the current month
+  const fetchMonthlyData = useCallback(async () => {
     setLoading(true);
     setError(null);
     
@@ -49,10 +53,24 @@ const AttendanceCalendar = () => {
     const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
     
     try {
-      const response = await attendanceService.getMyAttendanceByDateRange(start, end);
-      setAttendanceData(response.results || []);
+      const [attRes, leaveRes] = await Promise.allSettled([
+        attendanceService.getMyAttendanceByDateRange(start, end),
+        leaveService.getMyLeaveApplications()
+      ]);
+
+      if (attRes.status === 'fulfilled') {
+        const val = attRes.value;
+        setAttendanceData(Array.isArray(val) ? val : (val.results || []));
+      }
+
+      if (leaveRes.status === 'fulfilled') {
+        const lVal = leaveRes.value;
+        const leaves = Array.isArray(lVal) ? lVal : (lVal.results || lVal.leaves || []);
+        // Only keep approved leaves
+        setLeaveApplications(leaves.filter(l => (l.status || '').toLowerCase() === 'approved'));
+      }
     } catch (err) {
-      console.error('Failed to fetch attendance data:', err);
+      console.error('Failed to fetch attendance calendar data:', err);
       setError(err.message || 'Failed to load attendance data');
       enqueueSnackbar('Failed to load attendance calendar data', { variant: 'error' });
     } finally {
@@ -60,10 +78,10 @@ const AttendanceCalendar = () => {
     }
   }, [currentMonth, enqueueSnackbar]);
 
-  // Load attendance data when component mounts or month changes
+  // Load attendance & leaves data when month changes
   useEffect(() => {
-    fetchMonthlyAttendance();
-  }, [fetchMonthlyAttendance]);
+    fetchMonthlyData();
+  }, [fetchMonthlyData]);
 
   // Navigation handlers
   const handlePreviousMonth = () => {
@@ -75,19 +93,6 @@ const AttendanceCalendar = () => {
   };
 
   const handleCurrentMonth = () => {
-    // - [x] Fix Dashboard Leave Balances widget contrast
-    // - [x] Fix Leave Management table and cards contrast
-    // - [x] Fix Attendance Calendar day cells contrast
-    // - [x] Fix My Expenses table and dialog contrast
-    // - [x] Fix Asset Management table and dialog contrast
-    // - [x] Fix IT & HR Helpdesk table, comment feed, and dialog contrast
-    // - [x] Final visual verification across all pages
-    // - [x] Refactor Login page for Dark Mode (Basic)
-    // - [x] Refactor Signup (User Management) page for Dark Mode
-    // - [ ] Professional Redesign of the Login page
-    // - [ ] Fix Department data source in Directory
-    // - [ ] Create high-fidelity Add Employee form (screenshot accurate)
-    // - [ ] Verify comprehensive Employee Management flow
     setCurrentMonth(new Date());
   };
 
@@ -98,70 +103,171 @@ const AttendanceCalendar = () => {
     );
   };
 
+  // Check if day falls within any approved leave range
+  const getLeaveForDay = (day) => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    return leaveApplications.find(leave => {
+      const start = (leave.start_date || '').split('T')[0];
+      const end = (leave.end_date || leave.start_date || '').split('T')[0];
+      return dayStr >= start && dayStr <= end;
+    });
+  };
+
   // Function to render the status indicator for a day
   const renderStatusIndicator = (day) => {
     const record = getAttendanceForDay(day);
-    
-    if (!record) {
-      // No record for this day
-      return <HelpIcon color="disabled" fontSize="small" />;
+    const holiday = isHolidayDate(day);
+    const approvedLeave = getLeaveForDay(day);
+    const dayOfWeek = day.getDay(); // 0 is Sunday, 6 is Saturday
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    // 1. Check if it is a Public/Company Holiday
+    if (holiday) {
+      return (
+        <Tooltip title={`Holiday: ${holiday.name} (${holiday.type || 'Public Holiday'})`} arrow>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+            <CelebrationIcon sx={{ color: '#d9480f', fontSize: 24 }} />
+            <Chip 
+              label="HOLIDAY" 
+              size="small" 
+              sx={{ 
+                height: '20px', 
+                fontSize: '10px',
+                fontWeight: 900,
+                borderRadius: 0,
+                border: '2px solid #000',
+                bgcolor: '#fcc419',
+                color: '#000',
+                '& .MuiChip-label': { px: 0.5 }
+              }} 
+            />
+          </Box>
+        </Tooltip>
+      );
     }
 
-    // Determine status based on record properties
-    const status = record.status?.toLowerCase() || '';
-    
-    if (status.includes('present')) {
-      const hasClockIn = !!record.clock_in;
-      const hasClockOut = !!record.clock_out;
+    // 2. Check if user has an approved leave for this date
+    if (approvedLeave) {
+      const leaveLabel = approvedLeave.leave_type || approvedLeave.type || 'Leave';
+      return (
+        <Tooltip title={`Approved Leave: ${leaveLabel}`} arrow>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+            <BeachAccessIcon sx={{ color: '#1976d2', fontSize: 24 }} />
+            <Chip 
+              label={leaveLabel.toUpperCase()} 
+              size="small" 
+              sx={{ 
+                height: '20px', 
+                fontSize: '10px',
+                fontWeight: 900,
+                borderRadius: 0,
+                border: '2px solid #000',
+                bgcolor: '#339af0',
+                color: '#fff',
+                '& .MuiChip-label': { px: 0.5 }
+              }} 
+            />
+          </Box>
+        </Tooltip>
+      );
+    }
+
+    // 3. If an Attendance Record exists for this day
+    if (record) {
+      const status = (record.status || '').toLowerCase();
+
+      if (status.includes('present') || status.includes('working') || status.includes('completed')) {
+        const hasClockIn = !!record.clock_in;
+        const hasClockOut = !!record.clock_out;
+        
+        if (hasClockIn && hasClockOut) {
+          return (
+            <Tooltip title={`Present: ${(record.total_hours || 8).toFixed(1)} hrs`} arrow>
+              <CheckCircleIcon color="success" sx={{ fontSize: 26 }} />
+            </Tooltip>
+          );
+        } else if (hasClockIn) {
+          return (
+            <Tooltip title="Clocked In (Active / Working)" arrow>
+              <TimerIcon color="warning" sx={{ fontSize: 26 }} />
+            </Tooltip>
+          );
+        } else {
+          return (
+            <Tooltip title="Present" arrow>
+              <CheckCircleIcon color="success" sx={{ fontSize: 26 }} />
+            </Tooltip>
+          );
+        }
+      } 
       
-      if (hasClockIn && hasClockOut) {
-        // Fully present
+      if (status.includes('absent')) {
         return (
-          <Tooltip title={`Present: ${record.total_hours?.toFixed(1) || 0} hrs`}>
-            <CheckCircleIcon color="success" fontSize="small" />
-          </Tooltip>
-        );
-      } else if (hasClockIn) {
-        // Clocked in but not out
-        return (
-          <Tooltip title="Clocked in (not out)">
-            <TimerIcon color="warning" fontSize="small" />
+          <Tooltip title="Absent" arrow>
+            <CancelIcon color="error" sx={{ fontSize: 26 }} />
           </Tooltip>
         );
       }
-    } 
-    
-    if (status.includes('absent')) {
+      
+      if (status.includes('leave')) {
+        return (
+          <Tooltip title={`Leave (${record.leave_type || 'Approved'})`} arrow>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+              <EventBusyIcon sx={{ color: '#1976d2', fontSize: 22 }} />
+              <Chip 
+                label="LEAVE" 
+                size="small" 
+                sx={{ 
+                  height: '20px', 
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  borderRadius: 0,
+                  border: '2px solid #000',
+                  bgcolor: '#1976d2',
+                  color: '#fff',
+                  '& .MuiChip-label': { px: 0.5 }
+                }} 
+              />
+            </Box>
+          </Tooltip>
+        );
+      }
+
+      if (status.includes('holiday')) {
+        return (
+          <Tooltip title="Company Holiday" arrow>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+              <CelebrationIcon sx={{ color: '#d9480f', fontSize: 24 }} />
+              <Chip 
+                label="HOLIDAY" 
+                size="small" 
+                sx={{ 
+                  height: '20px', 
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  borderRadius: 0,
+                  border: '2px solid #000',
+                  bgcolor: '#fcc419',
+                  color: '#000',
+                  '& .MuiChip-label': { px: 0.5 }
+                }} 
+              />
+            </Box>
+          </Tooltip>
+        );
+      }
+    }
+
+    // 4. If Weekend
+    if (isWeekend) {
       return (
-        <Tooltip title="Absent">
-          <CancelIcon color="error" fontSize="small" />
-        </Tooltip>
+        <Typography variant="caption" sx={{ color: 'text.disabled', fontWeight: 800, textTransform: 'uppercase' }}>
+          Off Day
+        </Typography>
       );
     }
     
-    if (status.includes('leave') || status.includes('holiday')) {
-      return (
-        <Tooltip title={status}>
-          <Chip 
-            label={status.includes('leave') ? 'L' : 'H'} 
-            size="small" 
-            sx={{ 
-              height: '24px', 
-              minWidth: '24px', 
-              fontSize: '11px',
-              fontWeight: 900,
-              borderRadius: 0,
-              border: '2px solid #000',
-              bgcolor: status.includes('leave') ? '#1976d2' : '#fcc419',
-              color: status.includes('leave') ? '#fff' : '#000',
-              '& .MuiChip-label': { px: 0.5 }
-            }} 
-          />
-        </Tooltip>
-      );
-    }
-    
-    // Default unknown status
+    // 5. Default not recorded
     return <HelpIcon color="disabled" fontSize="small" />;
   };
 
@@ -175,8 +281,12 @@ const AttendanceCalendar = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Attendance Calendar
+      <Typography 
+        variant="h4" 
+        gutterBottom 
+        sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.5px' }}
+      >
+        Attendance &amp; Schedule Calendar
       </Typography>
       
       <Paper elevation={0} sx={{ 
@@ -184,39 +294,52 @@ const AttendanceCalendar = () => {
         mb: 3, 
         border: '4px solid #000', 
         borderRadius: 0, 
-        boxShadow: '15px 15px 0px #000' 
+        boxShadow: '10px 10px 0px #000' 
       }}>
         {/* Calendar header with navigation */}
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
-          mb: 2 
+          mb: 3,
+          pb: 2,
+          borderBottom: '3px solid #000'
         }}>
-          <IconButton onClick={handlePreviousMonth}>
+          <IconButton 
+            onClick={handlePreviousMonth}
+            sx={{ border: '2px solid #000', borderRadius: 0, bgcolor: '#fff', '&:hover': { bgcolor: '#fcc419' } }}
+          >
             <ArrowBackIcon />
           </IconButton>
           
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography variant="h5">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h5" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
               {format(currentMonth, 'MMMM yyyy')}
             </Typography>
-            <IconButton onClick={handleCurrentMonth} sx={{ ml: 1 }}>
-              <TodayIcon color="primary" />
+            <IconButton 
+              onClick={handleCurrentMonth} 
+              sx={{ border: '2px solid #000', borderRadius: 0, bgcolor: '#fcc419', '&:hover': { bgcolor: '#fab005' } }}
+              title="Jump to Current Month"
+            >
+              <TodayIcon />
             </IconButton>
           </Box>
           
-          <IconButton onClick={handleNextMonth}>
+          <IconButton 
+            onClick={handleNextMonth}
+            sx={{ border: '2px solid #000', borderRadius: 0, bgcolor: '#fff', '&:hover': { bgcolor: '#fcc419' } }}
+          >
             <ArrowForwardIcon />
           </IconButton>
         </Box>
         
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}>
-            <CircularProgress />
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', my: 8 }}>
+            <CircularProgress sx={{ color: '#000', mb: 2 }} />
+            <Typography sx={{ fontWeight: 800 }}>Loading Calendar Schedule...</Typography>
           </Box>
         ) : error ? (
-          <Alert severity="error">{error}</Alert>
+          <Alert severity="error" sx={{ border: '2px solid #000', borderRadius: 0, fontWeight: 700 }}>{error}</Alert>
         ) : (
           <>
             {/* Calendar Grid Container */}
@@ -230,10 +353,12 @@ const AttendanceCalendar = () => {
                 <Box key={day} sx={{ 
                   textAlign: 'center', 
                   fontWeight: 900,
-                  fontSize: '0.85rem',
+                  fontSize: '0.9rem',
                   textTransform: 'uppercase',
-                  pb: 1,
-                  color: 'text.secondary'
+                  py: 1,
+                  bgcolor: '#000',
+                  color: '#fff',
+                  border: '2px solid #000'
                 }}>
                   {day}
                 </Box>
@@ -242,7 +367,7 @@ const AttendanceCalendar = () => {
               {/* Padding for first week */}
               {Array.from({ length: getDay(monthStart) }).map((_, index) => (
                 <Box key={`padding-${index}`} sx={{ 
-                  height: '100px', 
+                  height: '110px', 
                   opacity: 0, 
                   pointerEvents: 'none' 
                 }} />
@@ -251,18 +376,24 @@ const AttendanceCalendar = () => {
               {/* Day cells */}
               {days.map(day => {
                 const isCurrentDay = isToday(day);
-                const record = getAttendanceForDay(day);
+                const holiday = isHolidayDate(day);
+                const approvedLeave = getLeaveForDay(day);
                 
+                let cellBg = 'background.paper';
+                if (isCurrentDay) cellBg = alpha('#fcc419', 0.25);
+                else if (holiday) cellBg = '#fff9db';
+                else if (approvedLeave) cellBg = '#e7f5ff';
+
                 return (
                   <Paper 
                     key={day.toISOString()}
                     elevation={0}
                     sx={{ 
                       p: 1.5, 
-                      height: '100px',
+                      height: '110px',
                       border: '3px solid #000',
                       borderRadius: 0,
-                      backgroundColor: isCurrentDay ? alpha('#fcc419', 0.1) : 'background.paper',
+                      backgroundColor: cellBg,
                       boxShadow: isCurrentDay ? '5px 5px 0px #000' : 'none',
                       display: 'flex',
                       flexDirection: 'column',
@@ -270,19 +401,35 @@ const AttendanceCalendar = () => {
                       transition: 'all 0.2s ease',
                       '&:hover': {
                         transform: 'translate(-2px, -2px)',
-                        boxShadow: '8px 8px 0px #000'
+                        boxShadow: '6px 6px 0px #000'
                       }
                     }}
                   >
-                    <Typography 
-                      sx={{ 
-                        fontWeight: 900,
-                        fontSize: '1rem',
-                        mb: 1
-                      }}
-                    >
-                      {format(day, 'd')}
-                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography 
+                        sx={{ 
+                          fontWeight: 900,
+                          fontSize: '1.05rem',
+                          color: isCurrentDay ? '#000' : 'text.primary'
+                        }}
+                      >
+                        {format(day, 'd')}
+                      </Typography>
+                      {isCurrentDay && (
+                        <Chip 
+                          label="TODAY" 
+                          size="small" 
+                          sx={{ 
+                            height: '16px', 
+                            fontSize: '9px', 
+                            fontWeight: 900, 
+                            bgcolor: '#000', 
+                            color: '#fff',
+                            borderRadius: 0
+                          }} 
+                        />
+                      )}
+                    </Box>
                     
                     <Box sx={{ 
                       display: 'flex', 
@@ -298,27 +445,43 @@ const AttendanceCalendar = () => {
             </Box>
             
             {/* Legend */}
-            <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ 
+              mt: 4, 
+              pt: 2.5, 
+              borderTop: '3px solid #000', 
+              display: 'flex', 
+              gap: 2.5, 
+              flexWrap: 'wrap', 
+              alignItems: 'center' 
+            }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 900, textTransform: 'uppercase', mr: 1 }}>
+                Legend:
+              </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
-                <Typography variant="caption">Present</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>Present</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <TimerIcon color="warning" fontSize="small" sx={{ mr: 0.5 }} />
-                <Typography variant="caption">Clocked In</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>Clocked In</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <CancelIcon color="error" fontSize="small" sx={{ mr: 0.5 }} />
-                <Typography variant="caption">Absent</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>Absent</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Chip label="L" size="small" color="info" 
-                  sx={{ height: '18px', minWidth: '18px', fontSize: '10px', mr: 0.5 }} />
-                <Typography variant="caption">Leave/Holiday</Typography>
+                <BeachAccessIcon sx={{ color: '#1976d2', fontSize: 18, mr: 0.5 }} />
+                <Chip label="LEAVE" size="small" sx={{ height: '18px', fontSize: '10px', fontWeight: 900, bgcolor: '#339af0', color: '#fff', mr: 0.5, borderRadius: 0 }} />
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>Approved Leave</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <CelebrationIcon sx={{ color: '#d9480f', fontSize: 18, mr: 0.5 }} />
+                <Chip label="HOLIDAY" size="small" sx={{ height: '18px', fontSize: '10px', fontWeight: 900, bgcolor: '#fcc419', color: '#000', mr: 0.5, borderRadius: 0 }} />
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>Public / Gazetted Holiday</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <HelpIcon color="disabled" fontSize="small" sx={{ mr: 0.5 }} />
-                <Typography variant="caption">Not Recorded</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.secondary' }}>Not Recorded / Off Day</Typography>
               </Box>
             </Box>
           </>
@@ -328,4 +491,4 @@ const AttendanceCalendar = () => {
   );
 };
 
-export default AttendanceCalendar; 
+export default AttendanceCalendar;

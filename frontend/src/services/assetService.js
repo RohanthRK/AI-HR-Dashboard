@@ -55,10 +55,20 @@ const assetService = {
     }
   },
 
-  // Update asset status (admin/manager)
+  // Update asset status/details (admin)
   updateAsset: async (assetId, assetData) => {
     try {
       const response = await assetAPI.put(`/${assetId}/`, assetData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Add comment/note to asset (admin)
+  addComment: async (assetId, comment) => {
+    try {
+      const response = await assetAPI.patch(`/${assetId}/comment/`, { comment });
       return response.data;
     } catch (error) {
       throw error;

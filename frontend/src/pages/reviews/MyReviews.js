@@ -80,20 +80,42 @@ const MyReviews = ({ isComponent = false }) => {
       
       // 2. Fetch assigned reviews (Reviews I need to DO)
       const fetchAssigned = isManager ? reviewService.getMyAssignedReviews() : Promise.resolve({ results: [] });
+      // 3. Fetch reviews of myself and the team I belong to
+      const fetchMyReviews = reviewService.getMyPerformanceReviews();
       
-      const [assignedData] = await Promise.all([fetchAssigned]);
+      const [assignedData, myReviewsData] = await Promise.all([fetchAssigned, fetchMyReviews]);
       
       let combinedReviews = [];
+      const seenIds = new Set();
       
-      // Process Assigned Reviews (Reviews I need to DO)
+      // Process Assigned Reviews (Reviews I need to DO as Manager)
       if (isManager && assignedData && (assignedData.results || Array.isArray(assignedData))) {
         const results = assignedData.results || assignedData;
-        const processed = results.map(r => ({
-          ...r,
-          subType: r.type === 'Team' ? 'Team Review' : 'Assigned Review',
-          isPersonal: false
-        }));
-        combinedReviews = [...combinedReviews, ...processed];
+        results.forEach(r => {
+          const rId = String(r._id || r.id);
+          seenIds.add(rId);
+          combinedReviews.push({
+            ...r,
+            subType: r.type === 'Team' ? 'Team Review' : 'Assigned Review',
+            isPersonal: false
+          });
+        });
+      }
+
+      // Process My Reviews & Team Reviews I belong to
+      if (myReviewsData && (myReviewsData.results || Array.isArray(myReviewsData))) {
+        const results = myReviewsData.results || myReviewsData;
+        results.forEach(r => {
+          const rId = String(r._id || r.id);
+          if (!seenIds.has(rId)) {
+            seenIds.add(rId);
+            combinedReviews.push({
+              ...r,
+              subType: r.type === 'Team' ? 'Team Review (My Team)' : 'Individual Review',
+              isPersonal: true
+            });
+          }
+        });
       }
       
       setReviews(combinedReviews);
@@ -107,7 +129,7 @@ const MyReviews = ({ isComponent = false }) => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [currentUser]);
 
   const getStatusColor = (status) => {
     if (!status) return 'warning';
@@ -122,12 +144,12 @@ const MyReviews = ({ isComponent = false }) => {
   };
 
   const getDisplayName = (review) => {
-    if (review.isPersonal) {
-      return review.reviewer_name || review.reviewer || 'HR Manager';
+    if (review.type === 'Team') {
+      return review.team_name || review.subject_name || 'My Team';
     }
 
-    if (review.type === 'Team') {
-      return review.team_name || review.employee_name || 'Unnamed Team';
+    if (review.isPersonal) {
+      return review.reviewer_name || review.reviewer || 'HR Manager';
     }
     
     // Check if employee name is directly on the review (populated by backend now)
@@ -163,17 +185,22 @@ const MyReviews = ({ isComponent = false }) => {
   const handleCreateReview = () => navigate('/reviews');
 
   const handleViewReview = (review) => {
-    const isCompleted = review.status === 'Completed' || review.status === 'success';
-    if (review.type === 'Team') {
-      if (isCompleted) {
-        setSelectedReview(review);
-        setDetailsOpen(true);
-      } else {
-        navigate('/reviews/team-performance-review');
-      }
-    } else {
+    const score = getReviewScore(review);
+    const isCompleted = (review.status && review.status.toLowerCase() === 'completed') || 
+                        (review.status && review.status.toLowerCase() === 'success') || 
+                        review.status === 'Complete' || 
+                        Boolean(review.is_completed) || 
+                        score !== null;
+    if (isCompleted) {
       setSelectedReview(review);
       setDetailsOpen(true);
+    } else {
+      if (review.type === 'Team') {
+        navigate('/reviews/team-performance-review');
+      } else {
+        const targetEmpId = review.employee_id || review.id || review._id;
+        navigate(`/reviews/employee/${targetEmpId}`);
+      }
     }
   };
 
@@ -219,7 +246,11 @@ const MyReviews = ({ isComponent = false }) => {
         <TableBody>
           {data.length > 0 ? data.map((review, idx) => {
             const score = getReviewScore(review);
-            const isCompleted = review.status === 'Completed' || review.status === 'success';
+            const isCompleted = (review.status && review.status.toLowerCase() === 'completed') ||
+                                (review.status && review.status.toLowerCase() === 'success') ||
+                                review.status === 'Complete' ||
+                                Boolean(review.is_completed) ||
+                                score !== null;
             const statusLabel = isCompleted ? 'Completed' : (review.status || 'Pending');
             return (
               <TableRow key={review.id || review._id || idx}>
@@ -272,7 +303,7 @@ const MyReviews = ({ isComponent = false }) => {
                     sx={{ fontWeight: 800 }}
                     onClick={() => handleViewReview(review)}
                   >
-                    {(review.isPersonal) ? 'View Results' : (review.type === 'Team' && !isCompleted ? 'Manage Team' : 'Complete Review')}
+                    {isCompleted ? 'View Review' : (review.type === 'Team' ? 'Complete Team Review' : 'Complete Review')}
                   </Button>
                 </TableCell>
               </TableRow>

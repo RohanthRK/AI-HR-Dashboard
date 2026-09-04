@@ -79,6 +79,11 @@ const PIPTab = () => {
     }
   };
 
+  const getEmployeeName = (empId) => {
+    const emp = employees.find(e => e.employee_id === empId || e._id === empId || e.id === empId);
+    return emp ? `${emp.first_name} ${emp.last_name} (${emp.employee_id})` : empId;
+  };
+
   const filteredPips = pips.filter(pip => pip.status === statusFilter);
 
   const isManager = ['Admin', 'Manager', 'HR'].includes(currentUser?.role);
@@ -163,7 +168,7 @@ const PIPTab = () => {
               <Paper sx={{ 
                 p: 3, 
                 border: '3px solid #000', 
-                borderRadius: 0,
+                borderRadius: 0, 
                 bgcolor: pip.status === 'In Progress' ? alpha('#fa5252', 0.05) : 
                          pip.status === 'Completed' ? alpha('#40c057', 0.05) : alpha('#adb5bd', 0.1)
               }}>
@@ -178,9 +183,9 @@ const PIPTab = () => {
                 <Typography variant="body2" sx={{ mb: 2 }}>{pip.description}</Typography>
                 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Chip 
-                      label={`Assigned to: ${pip.employee_id}`}
+                      label={`Assigned to: ${getEmployeeName(pip.employee_id)}`}
                       sx={{ borderRadius: 0, border: '1px solid #000', fontWeight: 700 }}
                     />
                     <Chip 
@@ -204,15 +209,15 @@ const PIPTab = () => {
                     }}
                     sx={{ 
                       fontWeight: 900, 
-                      bgcolor: isManager ? '#000' : alpha('#40c057', 0.1), 
-                      color: isManager ? '#fff' : '#40c057', 
+                      bgcolor: isManager ? '#000' : '#000', 
+                      color: '#fff', 
                       borderRadius: 0,
                       px: 2,
-                      border: isManager ? 'none' : '2px solid #40c057',
-                      '&:hover': { bgcolor: isManager ? '#222' : alpha('#40c057', 0.2) }
+                      border: '2px solid #000',
+                      '&:hover': { bgcolor: '#222' }
                     }}
                   >
-                    {isManager ? 'VIEW DETAILS' : 'VIEW PROGRESS LOG'}
+                    {isManager ? 'VIEW & UPDATE DETAILS' : 'VIEW & ADD PROGRESS LOG'}
                   </Button>
                 </Box>
               </Paper>
@@ -286,12 +291,12 @@ const PIPTab = () => {
           sx: { borderRadius: 0, border: '4px solid #000', boxShadow: '15px 15px 0px #000' }
         }}
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>Update Performance Plan</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>Performance Improvement Plan Details & Updates</DialogTitle>
         <DialogContent>
           {selectedPip && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                Employee: {selectedPip.employee_id}
+                Assigned Employee: {getEmployeeName(selectedPip.employee_id)}
               </Typography>
               
               <Box sx={{ mt: 1 }}>

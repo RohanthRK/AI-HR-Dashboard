@@ -49,7 +49,7 @@ const ReviewsTab = () => {
         >
           <ToggleButton value="performance">MY PERFORMANCE</ToggleButton>
           {isManager && <ToggleButton value="my">REVIEW TASKS</ToggleButton>}
-          {isManager && <ToggleButton value="team">TEAM REVIEWS</ToggleButton>}
+          <ToggleButton value="team">TEAM REVIEWS</ToggleButton>
           {isManager && <ToggleButton value="admin">INDIVIDUAL REVIEWS</ToggleButton>}
         </ToggleButtonGroup>
       </Box>

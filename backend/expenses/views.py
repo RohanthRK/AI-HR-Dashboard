@@ -112,21 +112,36 @@ def handle_expense_detail(request, expense_id):
             else:
                 # Regular update
                 if 'status' in data:
-                    if user_role != 'admin':
+                    if user_role not in ['admin', 'manager']:
                         return JsonResponse({
                             'success': False,
-                            'error': 'Permission denied. Only Admin can change the status.'
+                            'error': 'Permission denied. Only Admin or Manager can change the status.'
                         }, status=403)
                 
                 is_owner = (employee_id and str(expense.get('employee_id')) == str(employee_id)) or \
                            (user_id and str(expense.get('user_id')) == str(user_id))
-                if user_role != 'admin' and not is_owner:
+                if user_role not in ['admin', 'manager'] and not is_owner:
                     return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
 
                 data['updatedAt'] = datetime.utcnow().isoformat()
+                new_status = data.get('status')
+                old_status = expense.get('status', 'Pending')
+                
+                update_ops = {'$set': data}
+                
+                # Auto-log status changes to comments
+                if new_status and new_status != old_status:
+                    author_name = request.user_info.get('username', 'Admin') if hasattr(request, 'user_info') else 'Admin'
+                    update_ops['$push'] = {'comments': {
+                        'text': f"Status changed from {old_status} to {new_status}",
+                        'createdAt': datetime.utcnow().isoformat(),
+                        'author': author_name,
+                        'is_system': True
+                    }}
+
                 result = expenses_collection.update_one(
                     {'_id': obj_id},
-                    {'$set': data}
+                    update_ops
                 )
             
             updated_expense = expenses_collection.find_one({'_id': obj_id})

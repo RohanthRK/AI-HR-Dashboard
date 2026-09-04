@@ -66,7 +66,7 @@ const EmployeePerformanceReview = () => {
         setLoading(true);
         // Try to get employee by ID
         const employeeData = await employeeService.getAllEmployees();
-        const foundEmployee = employeeData.find(emp => emp.id === employeeId || emp._id === employeeId);
+        const foundEmployee = employeeData.find(emp => emp.id === employeeId || emp._id === employeeId || emp.employee_id === employeeId);
         
         if (foundEmployee) {
           setEmployee(foundEmployee);

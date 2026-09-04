@@ -35,6 +35,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import objectiveService from '../../services/objectiveService';
 import teamService from '../../services/teamService';
+import employeeService from '../../services/employeeService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSnackbar } from 'notistack';
 import Autocomplete from '@mui/material/Autocomplete';
@@ -51,6 +52,45 @@ const OKRTab = () => {
   const [openEdit, setOpenEdit] = useState(false);
   const [selectedOkr, setSelectedOkr] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [myProfile, setMyProfile] = useState(null);
+  const [teams, setTeams] = useState([]);
+  const [departments, setDepartments] = useState([]);
+
+  const myTeamName = (myProfile?.team || currentUser?.team || '').toLowerCase();
+  const myTeamId = String(myProfile?.team_id || currentUser?.team_id || '');
+  const myDeptName = (myProfile?.department || currentUser?.department || '').toLowerCase();
+  const myDeptId = String(myProfile?.department_id || currentUser?.department_id || '');
+  const myEmpId = myProfile?.employee_id || myProfile?._id || currentUser?.employee_id || currentUser?.id;
+  const myEmail = myProfile?.email || currentUser?.email || '';
+
+  // Filter teams strictly for Manager
+  const managerFilteredTeams = teams.filter(t => {
+    const tName = (t.name || '').toLowerCase();
+    const tId = String(t.id || t._id || '');
+    const isManagerOfTeam = t.manager_id && (t.manager_id === myEmpId || t.manager_id === currentUser?.id || t.manager_id === myProfile?._id);
+    const isMemberOfTeam = Array.isArray(t.employees) && t.employees.some(e => {
+      if (typeof e === 'string') return e === myEmpId || e.toLowerCase() === myEmail.toLowerCase();
+      return (myEmpId && (e.id === myEmpId || e.employee_id === myEmpId || e._id === myEmpId)) || 
+             (myEmail && e.email && e.email.toLowerCase() === myEmail.toLowerCase());
+    });
+    const isNamedTeam = (myTeamName && tName === myTeamName) || (myTeamId && tId === myTeamId);
+    return isManagerOfTeam || isMemberOfTeam || isNamedTeam;
+  });
+
+  const availableTeams = currentUser?.role === 'Manager'
+    ? (managerFilteredTeams.length > 0 ? managerFilteredTeams : (myTeamName ? [{ id: myTeamId || 'my-team', name: myProfile?.team || currentUser?.team }] : []))
+    : teams;
+
+  const managerFilteredDepts = departments.filter(d => {
+    const dName = (d.name || '').toLowerCase();
+    const dId = String(d.id || d._id || '');
+    return (myDeptId && dId === myDeptId) || (myDeptName && dName === myDeptName);
+  });
+
+  const availableDepartments = currentUser?.role === 'Manager'
+    ? (managerFilteredDepts.length > 0 ? managerFilteredDepts : (myDeptName ? [{ id: myDeptId || 'my-dept', name: myProfile?.department || currentUser?.department }] : []))
+    : departments;
+
   const [newOkr, setNewOkr] = useState({
     title: '',
     description: '',
@@ -61,18 +101,20 @@ const OKRTab = () => {
     progress: 0,
     key_results: [{ title: '', progress: 0 }]
   });
-  const [teams, setTeams] = useState([]);
-  const [departments, setDepartments] = useState([]);
 
   const fetchObjectives = useCallback(async () => {
     setLoading(true);
     try {
       const params = { scope };
       
-      // For non-admins, force their own team/dept. For Admins, only filter if those flags are present or if they want to.
-      if (currentUser?.role !== 'Admin') {
-        if (scope === 'team' && currentUser?.team_id) params.team_id = currentUser.team_id;
-        if (scope === 'department' && currentUser?.department_id) params.department_id = currentUser.department_id;
+      // For non-admins, pass team/dept filter if known
+      const activeTeam = myTeamId || myTeamName;
+      const activeDept = myDeptId || myDeptName;
+      if (scope === 'team' && activeTeam) {
+        params.team_id = activeTeam;
+      }
+      if (scope === 'department' && activeDept) {
+        params.department_id = activeDept;
       }
       
       const response = await objectiveService.getAllObjectives(params);
@@ -84,7 +126,7 @@ const OKRTab = () => {
     } finally {
       setLoading(false);
     }
-  }, [scope, currentUser]);
+  }, [scope, currentUser, myTeamId, myTeamName, myDeptId, myDeptName]);
 
   useEffect(() => {
     fetchObjectives();
@@ -97,15 +139,26 @@ const OKRTab = () => {
         setTeams(Array.isArray(teamsData) ? teamsData : (teamsData.teams || []));
         
         const deptsData = await teamService.getAllDepartments();
-        // Handle both simple array and paginated response
         const deptList = deptsData.results || deptsData || [];
         setDepartments(deptList);
+
+        // Auto-resolve current employee profile if missing details
+        try {
+          const allEmps = await employeeService.getAllEmployees();
+          const me = (allEmps || []).find(e => 
+            (myEmail && e.email?.toLowerCase() === myEmail.toLowerCase()) || 
+            (myEmpId && (e.employee_id === myEmpId || e._id === myEmpId || e.id === myEmpId))
+          );
+          if (me) setMyProfile(me);
+        } catch (eErr) {
+          console.warn('Could not auto-resolve profile:', eErr);
+        }
       } catch (err) {
         console.error('Failed to fetch org data', err);
       }
     };
     if (currentUser) fetchOrgData();
-  }, [currentUser]);
+  }, [currentUser, myEmail, myEmpId]);
 
   const handleScopeChange = (event, newScope) => {
     if (newScope !== null) {
@@ -154,11 +207,19 @@ const OKRTab = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => {
+              const defaultTeamObj = availableTeams[0] || null;
+              const defaultDeptObj = availableDepartments[0] || null;
+              const defaultTeam = defaultTeamObj ? (defaultTeamObj.id || defaultTeamObj._id || defaultTeamObj.name) : (myTeamId || myTeamName || '');
+              const defaultTeamName = defaultTeamObj ? defaultTeamObj.name : (myProfile?.team || currentUser?.team || '');
+              const defaultDept = defaultDeptObj ? (defaultDeptObj.id || defaultDeptObj._id || defaultDeptObj.name) : (myDeptId || myDeptName || '');
+              const defaultDeptName = defaultDeptObj ? defaultDeptObj.name : (myProfile?.department || currentUser?.department || '');
               setNewOkr({ 
                 ...newOkr, 
                 scope: scope,
-                team_id: currentUser?.team_id || '',
-                department_id: currentUser?.department_id || ''
+                team_id: scope === 'team' ? defaultTeam : '',
+                team_name: scope === 'team' ? defaultTeamName : '',
+                department_id: scope === 'department' ? defaultDept : '',
+                department_name: scope === 'department' ? defaultDeptName : ''
               });
               setOpenCreate(true);
             }}
@@ -224,7 +285,23 @@ const OKRTab = () => {
                   <Select
                     value={newOkr.scope}
                     label="Scope"
-                    onChange={(e) => setNewOkr({ ...newOkr, scope: e.target.value })}
+                    onChange={(e) => {
+                      const newScopeVal = e.target.value;
+                      const defaultTeamObj = availableTeams[0] || null;
+                      const defaultDeptObj = availableDepartments[0] || null;
+                      const defaultTeam = defaultTeamObj ? (defaultTeamObj.id || defaultTeamObj._id || defaultTeamObj.name) : (myTeamId || myTeamName || '');
+                      const defaultTeamName = defaultTeamObj ? defaultTeamObj.name : (myProfile?.team || currentUser?.team || '');
+                      const defaultDept = defaultDeptObj ? (defaultDeptObj.id || defaultDeptObj._id || defaultDeptObj.name) : (myDeptId || myDeptName || '');
+                      const defaultDeptName = defaultDeptObj ? defaultDeptObj.name : (myProfile?.department || currentUser?.department || '');
+                      setNewOkr({ 
+                        ...newOkr, 
+                        scope: newScopeVal,
+                        team_id: newScopeVal === 'team' ? (newOkr.team_id || defaultTeam) : '',
+                        team_name: newScopeVal === 'team' ? (newOkr.team_name || defaultTeamName) : '',
+                        department_id: newScopeVal === 'department' ? (newOkr.department_id || defaultDept) : '',
+                        department_name: newScopeVal === 'department' ? (newOkr.department_name || defaultDeptName) : ''
+                      });
+                    }}
                   >
                     <MenuItem value="individual">Individual</MenuItem>
                     <MenuItem value="team">Team</MenuItem>
@@ -236,34 +313,42 @@ const OKRTab = () => {
 
             {newOkr.scope === 'team' && (
               <Autocomplete
-                options={teams}
+                options={availableTeams}
                 getOptionLabel={(option) => option.name || (typeof option === 'string' ? option : '')}
-                value={teams.find(t => t.id === newOkr.team_id || t._id === newOkr.team_id) || null}
+                value={availableTeams.find(t => t.id === newOkr.team_id || t._id === newOkr.team_id || t.name === newOkr.team_id) || availableTeams[0] || null}
                 onChange={(event, newValue) => {
-                  setNewOkr({ ...newOkr, team_id: newValue ? (newValue.id || newValue._id) : '' });
+                  setNewOkr({ 
+                    ...newOkr, 
+                    team_id: newValue ? (newValue.id || newValue._id || newValue.name) : '',
+                    team_name: newValue ? (newValue.name || '') : ''
+                  });
                 }}
                 renderInput={(params) => (
                   <TextField 
                     {...params} 
                     label="Select Team" 
-                    helperText="Search and select the team for this OKR"
+                    helperText={currentUser?.role === 'Manager' ? "Your assigned team(s)" : "Search and select the team for this OKR"}
                   />
                 )}
               />
             )}
             {newOkr.scope === 'department' && (
               <Autocomplete
-                options={departments}
+                options={availableDepartments}
                 getOptionLabel={(option) => option.name || (typeof option === 'string' ? option : '')}
-                value={departments.find(d => d.id === newOkr.department_id || d._id === newOkr.department_id) || null}
+                value={availableDepartments.find(d => d.id === newOkr.department_id || d._id === newOkr.department_id || d.name === newOkr.department_id) || availableDepartments[0] || null}
                 onChange={(event, newValue) => {
-                  setNewOkr({ ...newOkr, department_id: newValue ? (newValue.id || newValue._id) : '' });
+                  setNewOkr({ 
+                    ...newOkr, 
+                    department_id: newValue ? (newValue.id || newValue._id || newValue.name) : '',
+                    department_name: newValue ? (newValue.name || '') : ''
+                  });
                 }}
                 renderInput={(params) => (
                   <TextField 
                     {...params} 
                     label="Select Department" 
-                    helperText="Search and select the department for this OKR"
+                    helperText={currentUser?.role === 'Manager' ? "Your assigned department" : "Search and select the department for this OKR"}
                   />
                 )}
               />
@@ -461,7 +546,14 @@ const OKRTab = () => {
             onClick={async () => {
               setSubmitting(true);
               try {
-                await objectiveService.updateObjective(selectedOkr._id, selectedOkr);
+                const krs = selectedOkr.key_results || [];
+                const autoProgress = krs.length > 0
+                  ? Math.round(krs.reduce((acc, kr) => acc + (parseInt(kr.progress) || 0), 0) / krs.length)
+                  : (parseInt(selectedOkr.progress) || 0);
+                await objectiveService.updateObjective(selectedOkr._id, {
+                  ...selectedOkr,
+                  progress: autoProgress
+                });
                 enqueueSnackbar('OKR updated successfully', { variant: 'success' });
                 setOpenEdit(false);
                 fetchObjectives();
@@ -532,12 +624,23 @@ const OKRTab = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                     <Typography variant="h6" sx={{ fontWeight: 900 }}>{okr.title}</Typography>
-                    {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+                    {(scope === 'individual' ||
+                      currentUser?.role === 'Admin' || 
+                      currentUser?.role === 'Manager' || 
+                      okr.employee_id === currentUser?.employee_id || 
+                      okr.employee_id === currentUser?.employee_code ||
+                      okr.employee_id === currentUser?.id || 
+                      okr.employee_id === currentUser?._id) && (
                       <MuiIconButton 
                         size="small" 
                         sx={{ ml: 1, border: '1px solid #000', borderRadius: 0, '&:hover': { bgcolor: '#fcc419' } }}
                         onClick={() => {
-                          setSelectedOkr(okr);
+                          setSelectedOkr({
+                            ...okr,
+                            key_results: Array.isArray(okr.key_results) && okr.key_results.length > 0 
+                              ? okr.key_results.map(kr => ({ ...kr, progress: kr.progress || 0 })) 
+                              : [{ title: '', progress: 0 }]
+                          });
                           setOpenEdit(true);
                         }}
                       >

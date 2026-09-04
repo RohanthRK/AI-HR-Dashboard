@@ -21,6 +21,9 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import PeopleIcon from '@mui/icons-material/People';
 import aiService from '../../../services/aiService';
+import teamService from '../../../services/teamService';
+import employeeService from '../../../services/employeeService';
+import { useAuth } from '../../../contexts/AuthContext';
 
 // Mock data in case API fails
 const mockTeamsData = {
@@ -62,6 +65,7 @@ const mockTeamsData = {
 };
 
 const TeamSelector = ({ onSelectTeam }) => {
+  const { currentUser } = useAuth();
   const [teams, setTeams] = useState([]);
   const [filteredTeams, setFilteredTeams] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,36 +79,136 @@ const TeamSelector = ({ onSelectTeam }) => {
     const fetchTeams = async () => {
       try {
         setLoading(true);
-        let data;
-        try {
-          data = await aiService.getTeamStats();
-        } catch (apiError) {
-          console.error('API call failed, using mock data:', apiError);
-          data = mockTeamsData;
-        }
-        
-        const allTeams = [];
+        let allTeams = [];
         const deptNames = ['All'];
-        
-        if (data?.departments) {
-          data.departments.forEach(dept => {
-            deptNames.push(dept.name);
-            dept.teams.forEach(team => {
-              allTeams.push({
-                id: team.id,
-                name: team.name,
-                department: dept.name,
-                description: `Team in the ${dept.name} department`,
-                memberCount: team.employee_count,
-                lastReview: null,
-                tags: [],
-                employees: team.employees
-              });
+
+        // 1. Fetch real teams directly from MongoDB
+        try {
+          const dbTeams = await teamService.getAllTeams();
+          const teamList = Array.isArray(dbTeams) ? dbTeams : (dbTeams.teams || []);
+          teamList.forEach(dt => {
+            const deptName = dt.department_name || dt.department || 'General';
+            if (!deptNames.includes(deptName)) deptNames.push(deptName);
+            
+            allTeams.push({
+              id: dt.id || dt._id,
+              name: dt.name,
+              department: deptName,
+              description: dt.description || `Team in ${deptName}`,
+              memberCount: dt.employees?.length || dt.members?.length || 0,
+              lastReview: null,
+              tags: [],
+              employees: dt.employees || [],
+              manager_id: dt.manager_id || dt.manager || ''
             });
           });
+        } catch (dbErr) {
+          console.warn('DB teams fetch fallback:', dbErr);
+        }
+
+        // 2. If no teams from DB, fallback to AI stats or mock
+        if (allTeams.length === 0) {
+          try {
+            const data = await aiService.getTeamStats();
+            if (data?.departments) {
+              data.departments.forEach(dept => {
+                if (!deptNames.includes(dept.name)) deptNames.push(dept.name);
+                dept.teams?.forEach(team => {
+                  allTeams.push({
+                    id: team.id || team._id,
+                    name: team.name,
+                    department: dept.name,
+                    description: team.description || `Team in the ${dept.name} department`,
+                    memberCount: team.employee_count || team.members?.length || 0,
+                    lastReview: null,
+                    tags: [],
+                    employees: team.employees || [],
+                    manager_id: team.manager_id || ''
+                  });
+                });
+              });
+            }
+          } catch (e) {
+            console.warn('AI stats fallback failed:', e);
+          }
+        }
+
+        // Auto-resolve current user profile details
+        let userTeamName = (currentUser?.team || '').toLowerCase();
+        let userTeamId = currentUser?.team_id ? String(currentUser.team_id) : '';
+        let userDeptName = (currentUser?.department || '').toLowerCase();
+        const myEmpId = currentUser?.employee_id || currentUser?.id;
+        const myEmail = currentUser?.email || '';
+
+        try {
+          const allEmps = await employeeService.getAllEmployees();
+          const me = (allEmps || []).find(e => 
+            (myEmail && e.email?.toLowerCase() === myEmail.toLowerCase()) || 
+            (myEmpId && (e.employee_id === myEmpId || e._id === myEmpId || e.id === myEmpId))
+          );
+          if (me) {
+            if (me.team) userTeamName = me.team.toLowerCase();
+            if (me.team_id) userTeamId = String(me.team_id);
+            if (me.department) userDeptName = me.department.toLowerCase();
+          }
+        } catch (err) {
+          console.warn('Auto-resolve employee team error:', err);
+        }
+
+        // Filter only the team the manager/admin belongs to or manages
+        if (currentUser?.role === 'Manager') {
+          const myTeams = allTeams.filter(team => {
+            const tName = (team.name || '').toLowerCase();
+            const tId = String(team.id || team._id || '');
+            const tDept = (team.department || '').toLowerCase();
+            
+            const isManagerOfTeam = Boolean(team.manager_id && (
+              team.manager_id === myEmpId || 
+              team.manager_id === currentUser?.id ||
+              team.manager_id === currentUser?.employee_id ||
+              team.manager_id === currentUser?.employee_code
+            ));
+            
+            const isMemberOfTeam = Array.isArray(team.employees) && team.employees.some(e => {
+              if (typeof e === 'string') return (myEmail && e.toLowerCase() === myEmail.toLowerCase()) || (myEmpId && e === myEmpId);
+              const eEmpId = e.employee_id;
+              const eId = e.id || e._id;
+              const eMail = e.email;
+              return (myEmpId && (eId === myEmpId || eEmpId === myEmpId)) ||
+                     (currentUser?.id && eId === currentUser?.id) ||
+                     (myEmail && eMail && eMail.toLowerCase() === myEmail.toLowerCase());
+            });
+            
+            const isNamedTeam = Boolean(
+              (userTeamName && (tName === userTeamName || tName.includes(userTeamName) || userTeamName.includes(tName))) || 
+              (userTeamId && (tId === userTeamId || tId.includes(userTeamId)))
+            );
+
+            const isMatchingDept = Boolean(userDeptName && tDept && (tDept === userDeptName || tDept.includes(userDeptName)));
+
+            return isManagerOfTeam || isMemberOfTeam || isNamedTeam || isMatchingDept;
+          });
+
+          if (myTeams.length > 0) {
+            allTeams = myTeams;
+          } else if (currentUser?.team || userTeamName) {
+            // Provide fallback team object for current user's team
+            allTeams = [{
+              id: userTeamId || 'my-team',
+              name: currentUser?.team || userTeamName,
+              department: currentUser?.department || 'General',
+              description: `Team for ${currentUser?.team || userTeamName}`,
+              memberCount: 1,
+              lastReview: null,
+              tags: [],
+              employees: [],
+              manager_id: myEmpId
+            }];
+          }
         }
         
-        setDepartments(deptNames);
+        const visibleDepts = ['All', ...new Set(allTeams.map(t => t.department).filter(Boolean))];
+        setDepartments(visibleDepts);
         setTeams(allTeams);
         setFilteredTeams(allTeams);
         setLoading(false);
@@ -116,7 +220,7 @@ const TeamSelector = ({ onSelectTeam }) => {
     };
     
     fetchTeams();
-  }, []);
+  }, [currentUser]);
   
   // Filter teams based on search term and department
   useEffect(() => {
@@ -128,7 +232,7 @@ const TeamSelector = ({ onSelectTeam }) => {
       const term = searchTerm.toLowerCase();
       results = results.filter(team => 
         team.name.toLowerCase().includes(term) || 
-        team.description.toLowerCase().includes(term)
+        team.description?.toLowerCase().includes(term)
       );
     }
     setFilteredTeams(results);

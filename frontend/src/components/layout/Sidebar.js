@@ -722,6 +722,7 @@ const Sidebar = ({ open }) => {
           variant="outlined"
           fullWidth
           startIcon={<SupportAgentIcon />}
+          onClick={() => navigate('/helpdesk')}
           sx={{
             borderRadius: 2,
             textTransform: 'none',

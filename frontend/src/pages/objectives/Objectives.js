@@ -16,6 +16,8 @@ const Objectives = () => {
     const [objectives, setObjectives] = useState([]);
     const [loading, setLoading] = useState(true);
     const [openDialog, setOpenDialog] = useState(false);
+    const [openEditDialog, setOpenEditDialog] = useState(false);
+    const [selectedObj, setSelectedObj] = useState(null);
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -32,8 +34,7 @@ const Objectives = () => {
     const fetchObjectives = async () => {
         try {
             setLoading(true);
-            if (!currentUser?.id) return;
-            const response = await objectiveService.getAllObjectives(currentUser.id);
+            const response = await objectiveService.getAllObjectives({ scope: 'individual' });
             if (response.status === 'success' || response.success) {
                 setObjectives(response.data || response.objectives || []);
             }
@@ -55,7 +56,8 @@ const Objectives = () => {
         try {
             const payload = {
                 ...formData,
-                employee_id: currentUser?.id
+                employee_id: currentUser?.employee_id || currentUser?.id,
+                scope: 'individual'
             };
 
             const response = await objectiveService.createObjective(payload);
@@ -68,6 +70,20 @@ const Objectives = () => {
         } catch (error) {
             console.error('Error creating objective:', error);
             enqueueSnackbar('Failed to create objective', { variant: 'error' });
+        }
+    };
+
+    const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!selectedObj) return;
+        try {
+            await objectiveService.updateObjective(selectedObj._id, selectedObj);
+            enqueueSnackbar('Objective updated successfully', { variant: 'success' });
+            setOpenEditDialog(false);
+            fetchObjectives();
+        } catch (error) {
+            console.error('Error updating objective:', error);
+            enqueueSnackbar('Failed to update objective', { variant: 'error' });
         }
     };
 
@@ -148,9 +164,21 @@ const Objectives = () => {
                                 <CardContent sx={{ flexGrow: 1 }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                                         <Typography variant="h6" sx={{ fontWeight: 900, flex: 1 }}>{obj.title}</Typography>
-                                        <IconButton size="small" onClick={() => handleDelete(obj._id)} sx={{ ml: 1, color: 'text.secondary' }}>
-                                            <DeleteIcon />
-                                        </IconButton>
+                                        <Box>
+                                            <IconButton 
+                                                size="small" 
+                                                onClick={() => {
+                                                    setSelectedObj({ ...obj });
+                                                    setOpenEditDialog(true);
+                                                }} 
+                                                sx={{ color: 'text.secondary', mr: 0.5 }}
+                                            >
+                                                <EditIcon fontSize="small" />
+                                            </IconButton>
+                                            <IconButton size="small" onClick={() => handleDelete(obj._id)} sx={{ color: 'text.secondary' }}>
+                                                <DeleteIcon fontSize="small" />
+                                            </IconButton>
+                                        </Box>
                                     </Box>
                                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 40 }}>
                                         {obj.description || 'No description provided.'}
@@ -252,6 +280,48 @@ const Objectives = () => {
                         </Button>
                     </DialogActions>
                 </form>
+            </Dialog>
+
+            {/* Edit Objective Dialog */}
+            <Dialog open={openEditDialog} onClose={() => setOpenEditDialog(false)} maxWidth="sm" fullWidth PaperProps={{ className: 'brutal-border', sx: { border: '4px solid #000' } }}>
+                <DialogTitle sx={{ fontWeight: 900, borderBottom: '2px solid #000' }}>Edit Objective</DialogTitle>
+                {selectedObj && (
+                    <form onSubmit={handleEditSubmit}>
+                        <DialogContent sx={{ mt: 2 }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <TextField
+                                    label="Objective Title"
+                                    value={selectedObj.title || ''}
+                                    onChange={(e) => setSelectedObj({ ...selectedObj, title: e.target.value })}
+                                    required
+                                    fullWidth
+                                />
+                                <TextField
+                                    label="Description"
+                                    value={selectedObj.description || ''}
+                                    onChange={(e) => setSelectedObj({ ...selectedObj, description: e.target.value })}
+                                    multiline
+                                    rows={3}
+                                    fullWidth
+                                />
+                                <TextField
+                                    label="Target Date"
+                                    type="date"
+                                    value={selectedObj.target_date || ''}
+                                    onChange={(e) => setSelectedObj({ ...selectedObj, target_date: e.target.value })}
+                                    InputLabelProps={{ shrink: true }}
+                                    fullWidth
+                                />
+                            </Box>
+                        </DialogContent>
+                        <DialogActions sx={{ p: 3, borderTop: '2px solid #000' }}>
+                            <Button onClick={() => setOpenEditDialog(false)} sx={{ fontWeight: 800, color: 'text.secondary' }}>Cancel</Button>
+                            <Button type="submit" variant="contained" color="primary" sx={{ fontWeight: 800, border: '2px solid #000' }}>
+                                Save Changes
+                            </Button>
+                        </DialogActions>
+                    </form>
+                )}
             </Dialog>
         </Box>
     );

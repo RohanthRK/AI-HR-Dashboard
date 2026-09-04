@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import employeeService from '../services/employeeService';
 import teamService from '../services/teamService';
+import attendanceService from '../services/attendanceService';
+import leaveService from '../services/leaveService';
+import reviewService from '../services/reviewService';
 import { motion } from 'framer-motion';
 import { BarChart, PieChart } from '@mui/x-charts';
-import attendanceService from '../services/attendanceService';
 
 // Material UI components
 import {
@@ -23,17 +24,12 @@ import {
   Button,
   Divider,
   Alert,
-  Stack,
   List,
   ListItem,
   ListItemText,
-  ListItemAvatar,
   ListItemIcon,
-  Badge,
-  Skeleton,
   Tooltip,
   useTheme,
-  useMediaQuery,
   LinearProgress
 } from '@mui/material';
 
@@ -41,24 +37,21 @@ import {
 import PeopleIcon from '@mui/icons-material/People';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import EventBusyIcon from '@mui/icons-material/EventBusy';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import GroupsIcon from '@mui/icons-material/Groups';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AssessmentIcon from '@mui/icons-material/Assessment';
-import PersonSearchIcon from '@mui/icons-material/PersonSearch';
 import EventIcon from '@mui/icons-material/Event';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import WorkIcon from '@mui/icons-material/Work';
-import AddIcon from '@mui/icons-material/Add';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import InsightsIcon from '@mui/icons-material/Insights';
 import RateReviewIcon from '@mui/icons-material/RateReview';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import SkillsAssessmentIcon from '@mui/icons-material/Psychology';
 import CelebrationIcon from '@mui/icons-material/Celebration';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 // Animation variants
 const containerVariants = {
@@ -66,14 +59,14 @@ const containerVariants = {
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2,
+      staggerChildren: 0.08,
+      delayChildren: 0.1,
     }
   }
 };
 
 const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
+  hidden: { y: 15, opacity: 0 },
   visible: {
     y: 0,
     opacity: 1,
@@ -83,15 +76,37 @@ const itemVariants = {
 
 const cardVariants = {
   hover: {
-    scale: 1.03,
-    boxShadow: "0px 10px 30px rgba(0, 0, 0, 0.15)",
-    transition: { duration: 0.3 }
+    scale: 1.02,
+    transition: { duration: 0.2 }
   }
 };
+
+// Known Standard Public Holidays
+const COMPANY_HOLIDAYS = [
+  { name: "New Year's Day", date: '2026-01-01' },
+  { name: 'Republic Day', date: '2026-01-26' },
+  { name: 'Maha Shivratri', date: '2026-02-15' },
+  { name: 'Holi', date: '2026-03-04' },
+  { name: 'Good Friday', date: '2026-04-03' },
+  { name: 'Eid al-Fitr', date: '2026-03-20' },
+  { name: 'May Day', date: '2026-05-01' },
+  { name: 'Independence Day', date: '2026-08-15' },
+  { name: 'Ganesh Chaturthi', date: '2026-09-14' },
+  { name: 'Gandhi Jayanti', date: '2026-10-02' },
+  { name: 'Dussehra', date: '2026-10-20' },
+  { name: 'Diwali', date: '2026-11-08' },
+  { name: 'Christmas', date: '2026-12-25' }
+];
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Real Data States
+  const [employees, setEmployees] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [leaveBalance, setLeaveBalance] = useState({ earned: 18, totalRemaining: 18 });
   const [stats, setStats] = useState({
     totalEmployees: 0,
     totalTeams: 0,
@@ -105,253 +120,234 @@ const Dashboard = () => {
   });
 
   const [recentActivities, setRecentActivities] = useState([]);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-
-  const { currentUser, hasRole, isManager } = useAuth();
-  const navigate = useNavigate();
-  
-  // Attendance state
   const [attendanceStatus, setAttendanceStatus] = useState({
     is_clocked_in: false,
     last_check_in: null,
     loading: true
   });
   const [actionLoading, setActionLoading] = useState(false);
+
+  const { currentUser, isManager } = useAuth();
+  const navigate = useNavigate();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isAdminOrManager = isManager();
-  const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api`;
 
+  // Realtime Live Clock Ticker
   useEffect(() => {
-    // Simulate progress loading for better UX
-    if (loading) {
-      const timer = setInterval(() => {
-        setLoadingProgress((prevProgress) => {
-          const newProgress = prevProgress + 10;
-          if (newProgress >= 100) {
-            clearInterval(timer);
-          }
-          return Math.min(newProgress, 95); // Cap at 95% until real data loads
-        });
-      }, 300);
-
-      return () => {
-        clearInterval(timer);
-      };
-    } else {
-      setLoadingProgress(100);
-    }
-  }, [loading]);
-
-  useEffect(() => {
-    // Fetch dashboard data
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-
-        // Employee count
-        let employeeCount = 0;
-        let employeeData = [];
-
-        try {
-          // First try getting employees from real API
-          const employees = await employeeService.getAllEmployees();
-          if (employees && employees.length > 0) {
-            employeeCount = employees.length;
-            employeeData = employees;
-            console.log('Fetched real employee count:', employeeCount);
-          } else {
-            throw new Error('No employee data returned');
-          }
-        } catch (error) {
-          console.log('Error fetching real employee data:', error);
-
-          // Fallback to mock data
-          employeeData = [
-            { id: 'emp-1', name: 'John Doe', position: 'Team Lead', department: 'Engineering' },
-            { id: 'emp-2', name: 'Jane Smith', position: 'Senior Developer', department: 'Engineering' },
-            { id: 'emp-3', name: 'Bob Johnson', position: 'Developer', department: 'Engineering' },
-            { id: 'emp-4', name: 'Alice Brown', position: 'Team Lead', department: 'Engineering' },
-            { id: 'emp-5', name: 'Tom Wilson', position: 'Senior Developer', department: 'Engineering' },
-            { id: 'emp-6', name: 'Sarah Davis', position: 'Design Lead', department: 'Design' },
-            { id: 'emp-7', name: 'Mike Taylor', position: 'UX Designer', department: 'Design' }
-          ];
-
-          employeeCount = employeeData.length;
-          console.log('Using mock employee data:', employeeCount);
-        }
-
-        // Team count
-        let teamCount = 0;
-        let teamData = [];
-
-        try {
-          // Try getting teams from real API first
-          const teams = await teamService.getTeamsDebug();
-          if (teams && teams.length > 0) {
-            teamCount = teams.length;
-            teamData = teams;
-            console.log('Fetched real team count:', teamCount);
-          } else {
-            throw new Error('No team data returned');
-          }
-        } catch (error) {
-          console.log('Error fetching real team data:', error);
-
-          // Fallback to mock team data
-          teamData = [
-            { id: 'team-1', name: 'Frontend Team', department: 'Engineering', members_count: 3 },
-            { id: 'team-2', name: 'Backend Team', department: 'Engineering', members_count: 2 },
-            { id: 'team-3', name: 'UI/UX Team', department: 'Design', members_count: 2 }
-          ];
-
-          teamCount = teamData.length;
-          console.log('Using mock team data:', teamCount);
-        }
-
-        // Generate recent activities based on real data when possible
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const lastWeek = new Date(today);
-        lastWeek.setDate(lastWeek.getDate() - 7);
-
-        // Format dates for display
-        const todayFormatted = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const yesterdayFormatted = yesterday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const lastWeekFormatted = lastWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-        // Create more realistic activities using the real data when available
-        const randomEmployee = employeeData[Math.floor(Math.random() * employeeData.length)];
-        const randomTeam = teamData[Math.floor(Math.random() * teamData.length)];
-
-        const activities = [
-          {
-            id: 1,
-            title: 'New employee joined',
-            description: `${randomEmployee?.name || 'Sarah Davis'} joined the ${randomEmployee?.department || 'Design'} team`,
-            date: todayFormatted,
-            icon: <PersonAddIcon color="primary" />
-          },
-          {
-            id: 2,
-            title: 'Team Performance Review completed',
-            description: `${randomTeam?.name || 'UI/UX Team'} review was finalized`,
-            date: todayFormatted,
-            icon: <AssessmentIcon color="success" />
-          },
-          {
-            id: 3,
-            title: 'Project milestone reached',
-            description: 'HR Dashboard phase 1 completed',
-            date: yesterdayFormatted,
-            icon: <CheckCircleIcon color="info" />
-          },
-          {
-            id: 4,
-            title: 'Leave request approved',
-            description: `${randomEmployee?.name || 'John Doe'}'s vacation request was approved`,
-            date: yesterdayFormatted,
-            icon: <EventIcon color="warning" />
-          },
-          {
-            id: 5,
-            title: 'Talent Insights updated',
-            description: 'New skills trends analysis is available',
-            date: lastWeekFormatted,
-            icon: <InsightsIcon color="secondary" />
-          },
-          {
-            id: 6,
-            title: 'Team building event',
-            description: 'Upcoming: Virtual team building next Friday',
-            date: todayFormatted,
-            icon: <CelebrationIcon color="primary" />
-          }
-        ];
-
-        setRecentActivities(activities);
-
-        // Calculate attendance based on employee count
-        const presentCount = Math.max(1, Math.floor(employeeCount * 0.8));
-        const absentCount = Math.floor(employeeCount * 0.1);
-        const lateCount = employeeCount - presentCount - absentCount;
-
-        // Set stats based on user role with real counts
-        if (isAdminOrManager) {
-          setStats({
-            totalEmployees: employeeCount,
-            totalTeams: teamCount,
-            attendanceToday: {
-              present: presentCount,
-              absent: absentCount,
-              late: lateCount
-            },
-            pendingLeaves: Math.min(5, Math.ceil(employeeCount * 0.2)),
-            upcomingReviews: Math.min(8, Math.ceil(employeeCount * 0.3))
-          });
-        } else {
-          // Employee view
-          setStats({
-            totalEmployees: employeeCount,
-            totalTeams: teamCount,
-            attendanceToday: {
-              present: 1,
-              absent: 0,
-              late: 0
-            },
-            pendingLeaves: 1,
-            upcomingReviews: 1
-          });
-        }
-
-        // Simulate network delay for better loading animation
-        setTimeout(() => {
-          setError(null);
-          setLoading(false);
-        }, 800);
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data. Please try again later.');
-
-        // Fallback stats to ensure UI doesn't break
-        setStats({
-          totalEmployees: 7,
-          totalTeams: 3,
-          attendanceToday: {
-            present: 5,
-            absent: 1,
-            late: 1
-          },
-          pendingLeaves: 2,
-          upcomingReviews: 3
-        });
-
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, [currentUser, isAdminOrManager]);
-
-  // Fetch attendance status
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const status = await attendanceService.getStatus();
-        setAttendanceStatus({
-          is_clocked_in: status.is_clocked_in,
-          last_check_in: status.last_check_in,
-          loading: false
-        });
-      } catch (err) {
-        console.error('Error fetching attendance status:', err);
-        setAttendanceStatus(prev => ({ ...prev, loading: false }));
-      }
-    };
-    fetchStatus();
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
+  // Compute Next Upcoming Holiday Dynamically
+  const nextHoliday = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const upcoming = COMPANY_HOLIDAYS
+      .filter(h => h.date >= todayStr)
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+    if (upcoming) {
+      const hDate = new Date(upcoming.date + 'T00:00:00');
+      return {
+        name: upcoming.name,
+        dateFormatted: hDate.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+      };
+    }
+    return { name: 'New Year', dateFormatted: 'Fri, 01 Jan, 2027' };
+  }, []);
+
+  // Fetch all real-time data from MongoDB via backend endpoints
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // 1. Parallel fetch of all core domains
+      const [
+        empDataRes,
+        teamDataRes,
+        attStatusRes,
+        dailyAttRes,
+        leaveBalRes,
+        allLeavesRes,
+        reviewsRes
+      ] = await Promise.allSettled([
+        employeeService.getAllEmployees(),
+        teamService.getAllTeams(),
+        attendanceService.getStatus(),
+        attendanceService.getDailyAttendance(todayStr),
+        leaveService.getMyLeaveBalance(),
+        isAdminOrManager ? leaveService.getAllLeaveApplications() : leaveService.getMyLeaveApplications(),
+        isAdminOrManager ? reviewService.getMyAssignedReviews() : reviewService.getMyPerformanceReviews()
+      ]);
+
+      // Process Employees
+      const empList = empDataRes.status === 'fulfilled' && Array.isArray(empDataRes.value) ? empDataRes.value : [];
+      setEmployees(empList);
+
+      // Process Teams
+      let teamList = [];
+      if (teamDataRes.status === 'fulfilled') {
+        const val = teamDataRes.value;
+        teamList = Array.isArray(val) ? val : (val?.teams || val?.results || []);
+      }
+      setTeams(teamList);
+
+      // Process User Attendance Status
+      if (attStatusRes.status === 'fulfilled' && attStatusRes.value) {
+        setAttendanceStatus({
+          is_clocked_in: Boolean(attStatusRes.value.is_clocked_in),
+          last_check_in: attStatusRes.value.last_check_in,
+          loading: false
+        });
+      } else {
+        setAttendanceStatus(prev => ({ ...prev, loading: false }));
+      }
+
+      // Process Today's Attendance Stats
+      let presentCount = 0;
+      let lateCount = 0;
+      if (dailyAttRes.status === 'fulfilled' && dailyAttRes.value) {
+        const dRecords = Array.isArray(dailyAttRes.value) 
+          ? dailyAttRes.value 
+          : (dailyAttRes.value.records || dailyAttRes.value.results || []);
+
+        dRecords.forEach(rec => {
+          const isPresent = rec.clock_in || rec.status === 'Present' || rec.status === 'Working' || rec.status === 'Completed';
+          if (isPresent) presentCount++;
+          if (rec.status === 'Late' || (rec.clock_in && new Date(rec.clock_in).getHours() >= 10)) lateCount++;
+        });
+      }
+      // If user is clocked in and not yet reflected in daily records
+      if (attStatusRes.status === 'fulfilled' && attStatusRes.value?.is_clocked_in && presentCount === 0) {
+        presentCount = 1;
+      }
+      const absentCount = Math.max(0, empList.length - presentCount);
+
+      // Process Leaves
+      let pendingLeavesCount = 0;
+      let leaveRecords = [];
+      if (allLeavesRes.status === 'fulfilled') {
+        const lVal = allLeavesRes.value;
+        leaveRecords = Array.isArray(lVal) ? lVal : (lVal?.results || lVal?.leaves || []);
+        pendingLeavesCount = leaveRecords.filter(l => (l.status || '').toLowerCase() === 'pending').length;
+      }
+
+      // Process Leave Balance
+      if (leaveBalRes.status === 'fulfilled' && leaveBalRes.value) {
+        const bVal = leaveBalRes.value;
+        const earnedBal = bVal.balances?.['Earned Leave']?.remaining ?? 
+                         bVal.balances?.['Annual Leave']?.remaining ?? 
+                         bVal.total_remaining ?? 18;
+        setLeaveBalance({
+          earned: earnedBal,
+          totalRemaining: bVal.total_remaining ?? earnedBal
+        });
+      }
+
+      // Process Reviews
+      let upcomingReviewsCount = 0;
+      let reviewRecords = [];
+      if (reviewsRes.status === 'fulfilled') {
+        const rVal = reviewsRes.value;
+        reviewRecords = Array.isArray(rVal) ? rVal : (rVal?.results || []);
+        upcomingReviewsCount = reviewRecords.filter(r => (r.status || '').toLowerCase() !== 'completed' && !r.submission_date).length;
+      }
+
+      // Compile Stats
+      setStats({
+        totalEmployees: empList.length,
+        totalTeams: teamList.length,
+        attendanceToday: {
+          present: presentCount,
+          absent: absentCount,
+          late: lateCount
+        },
+        pendingLeaves: pendingLeavesCount,
+        upcomingReviews: upcomingReviewsCount
+      });
+
+      // Build Real Recent Activity Log from live records
+      const activities = [];
+
+      // 1. Newest Employees (Hires)
+      const sortedHires = [...empList]
+        .filter(e => e.hire_date || e.created_at)
+        .sort((a, b) => new Date(b.hire_date || b.created_at) - new Date(a.hire_date || a.created_at))
+        .slice(0, 3);
+
+      sortedHires.forEach((emp, i) => {
+        const dateStr = emp.hire_date || emp.created_at;
+        activities.push({
+          id: `hire-${emp._id || emp.id || i}`,
+          title: 'Employee Joined',
+          description: `${emp.first_name} ${emp.last_name} joined the ${emp.department || 'General'} team`,
+          date: dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent',
+          icon: <PersonAddIcon color="primary" />
+        });
+      });
+
+      // 2. Recent Leave Requests
+      const recentLeaves = [...leaveRecords]
+        .sort((a, b) => new Date(b.created_at || b.start_date || 0) - new Date(a.created_at || a.start_date || 0))
+        .slice(0, 2);
+
+      recentLeaves.forEach((lv, i) => {
+        const dateStr = lv.created_at || lv.start_date;
+        activities.push({
+          id: `leave-${lv._id || lv.id || i}`,
+          title: `Leave Request ${lv.status || 'Submitted'}`,
+          description: `${lv.employee_name || 'Employee'} requested ${lv.leave_type || 'Annual'} leave (${lv.days || 1} day(s))`,
+          date: dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent',
+          icon: <EventIcon color="warning" />
+        });
+      });
+
+      // 3. Recent Performance Reviews
+      const recentRevs = [...reviewRecords]
+        .filter(r => r.submission_date || r.review_date || r.created_at)
+        .sort((a, b) => new Date(b.submission_date || b.review_date || 0) - new Date(a.submission_date || a.review_date || 0))
+        .slice(0, 2);
+
+      recentRevs.forEach((rev, i) => {
+        const dateStr = rev.submission_date || rev.review_date || rev.created_at;
+        activities.push({
+          id: `rev-${rev._id || rev.id || i}`,
+          title: `${rev.type || 'Performance'} Review Updated`,
+          description: `Review for ${rev.subject_name || rev.employee_name || 'Team member'} was recorded`,
+          date: dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent',
+          icon: <AssessmentIcon color="success" />
+        });
+      });
+
+      if (activities.length === 0) {
+        activities.push({
+          id: 'welcome',
+          title: 'System Initialized',
+          description: 'All organization employee and operational data synchronized successfully.',
+          date: 'Today',
+          icon: <CheckCircleIcon color="info" />
+        });
+      }
+
+      setRecentActivities(activities);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load dashboard data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [currentUser]);
+
+  // Real-time Clock-In / Clock-Out Handler
   const handleClockAction = async () => {
     try {
       setActionLoading(true);
@@ -366,10 +362,12 @@ const Dashboard = () => {
         const response = await attendanceService.clockIn();
         setAttendanceStatus({
           is_clocked_in: true,
-          last_check_in: response.clock_in_time,
+          last_check_in: response.clock_in_time || new Date().toISOString(),
           loading: false
         });
       }
+      // Refresh counts after clock action
+      fetchDashboardData();
     } catch (err) {
       console.error('Clock action failed:', err);
       setError(err.response?.data?.message || 'Attendance action failed');
@@ -378,173 +376,153 @@ const Dashboard = () => {
     }
   };
 
-  // Loading state with skeleton UI
+  // Real Dynamic Department Distribution Data
+  const departmentPieData = useMemo(() => {
+    if (!employees || employees.length === 0) {
+      return [{ id: 0, value: 1, label: 'General', color: '#000000' }];
+    }
+    const counts = {};
+    employees.forEach(emp => {
+      const dept = emp.department || 'Other';
+      counts[dept] = (counts[dept] || 0) + 1;
+    });
+    const colors = ['#fcc419', '#339af0', '#51cf66', '#ff6b6b', '#cc5de8', '#20c997', '#ff922b', '#845ef7'];
+    return Object.entries(counts).map(([dept, count], idx) => ({
+      id: idx,
+      value: count,
+      label: dept,
+      color: colors[idx % colors.length]
+    }));
+  }, [employees]);
+
+  // Real Dynamic Monthly Recruitment Data
+  const monthlyRecruitmentData = useMemo(() => {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const currentMonthIdx = new Date().getMonth();
+    const last6 = [];
+    for (let i = 5; i >= 0; i--) {
+      const mIdx = (currentMonthIdx - i + 12) % 12;
+      last6.push(monthNames[mIdx]);
+    }
+
+    const counts = last6.map(() => 0);
+    employees.forEach(emp => {
+      const dStr = emp.hire_date || emp.created_at;
+      if (dStr) {
+        const d = new Date(dStr);
+        if (!isNaN(d.getTime())) {
+          const mName = monthNames[d.getMonth()];
+          const idx = last6.indexOf(mName);
+          if (idx >= 0) counts[idx]++;
+        }
+      }
+    });
+
+    return {
+      labels: last6,
+      values: counts
+    };
+  }, [employees]);
+
   if (loading) {
     return (
-      <Box sx={{ width: '100%' }}>
-        <LinearProgress
-          variant="determinate"
-          value={loadingProgress}
-          sx={{ height: 6, borderRadius: 3, mb: 4 }}
-        />
-
-        <Skeleton variant="text" sx={{ fontSize: '2rem', width: '180px', mb: 2 }} />
-
-        <Skeleton
-          variant="rounded"
-          sx={{ width: '100%', height: 100, mb: 4, borderRadius: 2 }}
-        />
-
-        <Grid container spacing={3} sx={{ mb: 3 }}>
-          {[1, 2, 3, 4].map((item) => (
-            <Grid item xs={12} sm={6} md={3} key={item}>
-              <Skeleton
-                variant="rounded"
-                sx={{
-                  width: '100%',
-                  height: 200,
-                  borderRadius: 4
-                }}
-                animation="wave"
-              />
-            </Grid>
-          ))}
-        </Grid>
-
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Skeleton
-              variant="rounded"
-              sx={{ width: '100%', height: 400, borderRadius: 4 }}
-              animation="wave"
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Skeleton
-              variant="rounded"
-              sx={{ width: '100%', height: 400, borderRadius: 4 }}
-              animation="wave"
-            />
-          </Grid>
-        </Grid>
+      <Box sx={{ width: '100%', py: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <CircularProgress size={60} thickness={5} sx={{ color: '#000', mb: 3 }} />
+        <Typography variant="h6" sx={{ fontWeight: 900 }}>Loading Realtime Dashboard Data...</Typography>
       </Box>
     );
   }
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      {/* Page title */}
-      <motion.div variants={itemVariants}>
+    <motion.div variants={containerVariants} initial="hidden" animate="visible">
+      {/* Page Title & Refresh */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography
           variant="h4"
           component="h1"
-          gutterBottom
           sx={{
-            fontWeight: 'bold',
-            background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            display: 'inline-block',
-            mb: 3
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: '-0.5px'
           }}
         >
-          Welcome to HR Dashboard
+          Overview Dashboard
         </Typography>
-      </motion.div>
-
-      {/* Error alert */}
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
+        <Button
+          variant="contained"
+          startIcon={<RefreshIcon />}
+          onClick={fetchDashboardData}
+          sx={{
+            bgcolor: '#000',
+            color: '#fff',
+            fontWeight: 900,
+            border: '2px solid #000',
+            borderRadius: 0,
+            boxShadow: '3px 3px 0px #fcc419',
+            '&:hover': { bgcolor: '#222', transform: 'translate(-2px, -2px)', boxShadow: '5px 5px 0px #fcc419' }
+          }}
         >
-          <Alert
-            severity="error"
-            sx={{ mb: 3, borderRadius: 2 }}
-            action={
-              <Button color="inherit" size="small" onClick={() => window.location.reload()}>
-                RETRY
-              </Button>
-            }
-          >
-            {error}
-          </Alert>
-        </motion.div>
+          Refresh
+        </Button>
+      </Box>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3, border: '3px solid #000', borderRadius: 0, fontWeight: 800 }}
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
       )}
 
-      {/* Welcome message */}
+      {/* Welcome Banner */}
       <motion.div variants={itemVariants}>
         <Paper
-          className="brutal-border brutal-shadow"
           sx={{
             p: 3,
             mb: 4,
-            backgroundColor: '#FFD700', // Brutalist yellow primary
-            color: '#000000',
-            position: 'relative',
-            overflow: 'hidden'
+            bgcolor: '#fcc419',
+            color: '#000',
+            border: '4px solid #000',
+            borderRadius: 0,
+            boxShadow: '6px 6px 0px #000'
           }}
           elevation={0}
         >
-          <Box sx={{ position: 'relative', zIndex: 2 }}>
-            <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Welcome back, {currentUser?.username || currentUser?.name || 'User'}!
+          <Box>
+            <Typography variant="h4" sx={{ fontWeight: 900, mb: 0.5, textTransform: 'uppercase' }}>
+              Welcome back, {currentUser?.first_name || currentUser?.username || 'User'}!
             </Typography>
-            <Typography variant="body1" sx={{ opacity: 0.9, mb: 1 }}>
-              {new Date().toLocaleDateString('en-US', {
+            <Typography variant="body1" sx={{ fontWeight: 800, mb: 1 }}>
+              {currentTime.toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric'
               })}
             </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8 }}>
-              You have {stats.pendingLeaves} pending approvals and {stats.upcomingReviews} upcoming reviews.
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              Live Status: {stats.pendingLeaves} pending leave approval(s) &bull; {stats.upcomingReviews} active review task(s).
             </Typography>
           </Box>
-
-          {/* Decorative elements */}
-          <Box
-            sx={{
-              position: 'absolute',
-              bottom: -15,
-              right: -15,
-              width: 100,
-              height: 100,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255,255,255,0.1)'
-            }}
-          />
-          <Box
-            sx={{
-              position: 'absolute',
-              top: -20,
-              left: '50%',
-              width: 60,
-              height: 60,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255,255,255,0.1)'
-            }}
-          />
         </Paper>
       </motion.div>
 
-      {/* Keka-Style Interactive Widgets */}
+      {/* Interactive Widgets */}
       <motion.div variants={itemVariants}>
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          {/* Web Clock-In Widget */}
+          {/* Live Web Clock-In Widget */}
           <Grid item xs={12} md={4}>
             <Paper
-              className="brutal-border brutal-shadow-hover"
               sx={{
                 p: 3,
                 height: '100%',
-                backgroundColor: '#BCAAA4', // Muted brown brute color
+                bgcolor: '#e9ecef',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between'
@@ -552,12 +530,15 @@ const Dashboard = () => {
               elevation={0}
             >
               <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800, textTransform: 'uppercase', mb: 1 }}>
-                  Time Today - {new Date().toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                <Typography variant="subtitle2" sx={{ fontWeight: 900, textTransform: 'uppercase', mb: 1 }}>
+                  Live Time Tracker
                 </Typography>
-                <Typography variant="overline" sx={{ fontWeight: 800 }}>Current Time</Typography>
-                <Typography variant="h3" sx={{ fontWeight: 900, mb: 2 }}>
-                  {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary' }}>CURRENT TIME</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 900, my: 1, fontFamily: 'monospace' }}>
+                  {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  Status: {attendanceStatus.is_clocked_in ? '🟢 CLOCKED IN' : '🔴 CLOCKED OUT'}
                 </Typography>
               </Box>
               <Button
@@ -565,20 +546,17 @@ const Dashboard = () => {
                 disabled={attendanceStatus.loading || actionLoading}
                 onClick={handleClockAction}
                 sx={{
-                  backgroundColor: attendanceStatus.is_clocked_in ? '#FF5252' : '#FFFFFF',
-                  color: attendanceStatus.is_clocked_in ? '#FFFFFF' : '#000000',
-                  border: '3px solid #000000',
-                  boxShadow: '4px 4px 0px #000000',
+                  mt: 2,
+                  bgcolor: attendanceStatus.is_clocked_in ? '#fa5252' : '#000',
+                  color: '#fff',
+                  border: '2px solid #000',
+                  borderRadius: 0,
+                  boxShadow: '3px 3px 0px #000',
                   fontWeight: 900,
                   '&:hover': {
-                    backgroundColor: attendanceStatus.is_clocked_in ? '#D32F2F' : '#E0E0E0',
-                    transform: 'translate(2px, 2px)',
-                    boxShadow: '2px 2px 0px #000000'
-                  },
-                  '&:disabled': {
-                    backgroundColor: '#CCCCCC',
-                    boxShadow: 'none',
-                    transform: 'none'
+                    bgcolor: attendanceStatus.is_clocked_in ? '#e03131' : '#222',
+                    transform: 'translate(-2px, -2px)',
+                    boxShadow: '5px 5px 0px #000'
                   }
                 }}
               >
@@ -587,14 +565,16 @@ const Dashboard = () => {
             </Paper>
           </Grid>
 
-          {/* Announcements/Holidays */}
+          {/* Real Holiday Widget */}
           <Grid item xs={12} md={4}>
             <Paper
-              className="brutal-border brutal-shadow-hover"
               sx={{
                 p: 3,
                 height: '100%',
-                backgroundColor: '#CE93D8', // Light purple
+                bgcolor: '#eebefa',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
@@ -605,86 +585,71 @@ const Dashboard = () => {
             >
               <Box sx={{ position: 'relative', zIndex: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>
-                    Holidays
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
+                    Upcoming Holiday
                   </Typography>
-                  <Typography variant="caption" sx={{ fontWeight: 800, textDecoration: 'underline', cursor: 'pointer' }}>
-                    View All
-                  </Typography>
+                  <CelebrationIcon sx={{ fontSize: 24 }} />
                 </Box>
                 <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>
-                  Holi
+                  {nextHoliday.name}
                 </Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  Wed, 04 March, 2026
+                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                  {nextHoliday.dateFormatted}
                 </Typography>
               </Box>
-              <CelebrationIcon sx={{ position: 'absolute', right: -20, bottom: -20, fontSize: 120, opacity: 0.2, zIndex: 1 }} />
             </Paper>
           </Grid>
 
-          {/* Leave Balances */}
+          {/* Real Leave Balance Widget */}
           <Grid item xs={12} md={4}>
             <Paper
-              className="brutal-border brutal-shadow-hover"
               sx={{
                 p: 3,
                 height: '100%',
-                bgcolor: 'background.paper',
+                bgcolor: '#d3f9d8',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between'
               }}
               elevation={0}
             >
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, textTransform: 'uppercase', mb: 2 }}>
-                Leave Balances
+              <Typography variant="subtitle2" sx={{ fontWeight: 900, textTransform: 'uppercase', mb: 1 }}>
+                My Leave Balance
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, my: 1 }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Box sx={{
-                    width: 70,
-                    height: 70,
+                    width: 65,
+                    height: 65,
                     borderRadius: '50%',
-                    border: '8px solid #00E676',
+                    border: '5px solid #2b8a3e',
+                    bgcolor: '#fff',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    mb: 1
+                    mb: 0.5
                   }}>
-                    <Typography variant="h6" sx={{ fontWeight: 900 }}>4.5</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 900 }}>{leaveBalance.earned}</Typography>
                   </Box>
-                  <Typography variant="caption" sx={{ fontWeight: 800 }}>EARNED</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Box sx={{
-                    width: 70,
-                    height: 70,
-                    borderRadius: '50%',
-                    border: '8px solid #E0E0E0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    mb: 1
-                  }}>
-                    <Typography variant="h6" sx={{ fontWeight: 900 }}>∞</Typography>
-                  </Box>
-                  <Typography variant="caption" sx={{ fontWeight: 800 }}>LOP</Typography>
+                  <Typography variant="caption" sx={{ fontWeight: 800 }}>AVAILABLE</Typography>
                 </Box>
                 <Box sx={{ ml: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <Typography
-                    variant="caption"
+                    variant="body2"
                     onClick={() => navigate('/leaves/request')}
-                    sx={{ fontWeight: 800, color: '#1976D2', cursor: 'pointer', textAlign: 'right' }}
+                    sx={{ fontWeight: 800, color: '#000', textDecoration: 'underline', cursor: 'pointer', textAlign: 'right' }}
                   >
-                    Request Leave
+                    Request Leave &rarr;
                   </Typography>
                   <Typography
-                    variant="caption"
+                    variant="body2"
                     onClick={() => navigate('/leaves')}
-                    sx={{ fontWeight: 800, color: '#1976D2', cursor: 'pointer', textAlign: 'right' }}
+                    sx={{ fontWeight: 800, color: '#000', textDecoration: 'underline', cursor: 'pointer', textAlign: 'right' }}
                   >
-                    View All Balances
+                    View All Balances &rarr;
                   </Typography>
                 </Box>
               </Box>
@@ -693,434 +658,273 @@ const Dashboard = () => {
         </Grid>
       </motion.div>
 
-      {/* Stats cards */}
+      {/* Core Stats Cards */}
       <motion.div variants={itemVariants}>
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          {/* Employee count */}
+          {/* Total Real Employees */}
           <Grid item xs={12} sm={6} md={3}>
-            <motion.div whileHover="hover" variants={cardVariants}>
-              <Card
-                className="brutal-border brutal-shadow-hover"
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-                elevation={0}
-              >
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '5px',
-                    backgroundColor: theme.palette.primary.main
-                  }}
-                />
-                <CardContent sx={{ flexGrow: 1, pt: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Avatar sx={{ bgcolor: '#000000', color: '#FFFFFF', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
-                      <PeopleIcon />
-                    </Avatar>
-                    <Typography variant="h6" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>Employees</Typography>
-                  </Box>
-                  <Typography
-                    variant="h3"
-                    component="div"
-                    sx={{
-                      mb: 2,
-                      color: theme.palette.primary.main,
-                      fontWeight: 'bold'
-                    }}
-                  >
-                    {stats.totalEmployees}
-                  </Typography>
-                  <Tooltip title="View employee directory">
-                    <Button
-                      size="medium"
-                      variant="outlined"
-                      endIcon={<ArrowForwardIcon />}
-                      onClick={() => navigate('/employees')}
-                      sx={{ mt: 'auto' }}
-                      fullWidth
-                    >
-                      View Directory
-                    </Button>
-                  </Tooltip>
-                </CardContent>
-              </Card>
-            </motion.div>
+            <Card
+              sx={{
+                height: '100%',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000'
+              }}
+              elevation={0}
+            >
+              <CardContent sx={{ pt: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Avatar sx={{ bgcolor: '#000', color: '#fff', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
+                    <PeopleIcon />
+                  </Avatar>
+                  <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>Employees</Typography>
+                </Box>
+                <Typography variant="h3" sx={{ mb: 2, color: '#000', fontWeight: 900 }}>
+                  {stats.totalEmployees}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => navigate('/employees')}
+                  sx={{ fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
+                  fullWidth
+                >
+                  View Directory
+                </Button>
+              </CardContent>
+            </Card>
           </Grid>
 
-          {/* Teams count */}
+          {/* Total Real Teams */}
           <Grid item xs={12} sm={6} md={3}>
-            <motion.div whileHover="hover" variants={cardVariants}>
-              <Card
-                className="brutal-border brutal-shadow-hover"
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-                elevation={0}
-              >
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '5px',
-                    backgroundColor: theme.palette.secondary.main
-                  }}
-                />
-                <CardContent sx={{ flexGrow: 1, pt: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Avatar sx={{ bgcolor: '#000000', color: '#FFFFFF', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
-                      <GroupsIcon />
-                    </Avatar>
-                    <Typography variant="h6" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>Teams</Typography>
-                  </Box>
-                  <Typography
-                    variant="h3"
-                    component="div"
-                    sx={{
-                      mb: 2,
-                      color: theme.palette.secondary.main,
-                      fontWeight: 'bold'
-                    }}
-                  >
-                    {stats.totalTeams}
-                  </Typography>
-                  <Tooltip title="View teams">
-                    <Button
-                      size="medium"
-                      variant="outlined"
-                      color="secondary"
-                      endIcon={<ArrowForwardIcon />}
-                      onClick={() => navigate('/teams')}
-                      sx={{ mt: 'auto' }}
-                      fullWidth
-                    >
-                      View Teams
-                    </Button>
-                  </Tooltip>
-                </CardContent>
-              </Card>
-            </motion.div>
+            <Card
+              sx={{
+                height: '100%',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000'
+              }}
+              elevation={0}
+            >
+              <CardContent sx={{ pt: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Avatar sx={{ bgcolor: '#000', color: '#fff', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
+                    <GroupsIcon />
+                  </Avatar>
+                  <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>Teams</Typography>
+                </Box>
+                <Typography variant="h3" sx={{ mb: 2, color: '#000', fontWeight: 900 }}>
+                  {stats.totalTeams}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => navigate('/teams')}
+                  sx={{ fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
+                  fullWidth
+                >
+                  View Teams
+                </Button>
+              </CardContent>
+            </Card>
           </Grid>
 
-          {/* Attendance today */}
+          {/* Today's Real Attendance */}
           <Grid item xs={12} sm={6} md={3}>
-            <motion.div whileHover="hover" variants={cardVariants}>
-              <Card
-                className="brutal-border brutal-shadow-hover"
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-                elevation={0}
-              >
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '5px',
-                    backgroundColor: theme.palette.success.main
-                  }}
-                />
-                <CardContent sx={{ flexGrow: 1, pt: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Avatar sx={{ bgcolor: '#000000', color: '#FFFFFF', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
-                      <AccessTimeIcon />
-                    </Avatar>
-                    <Typography variant="h6" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>Attendance</Typography>
+            <Card
+              sx={{
+                height: '100%',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000'
+              }}
+              elevation={0}
+            >
+              <CardContent sx={{ pt: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Avatar sx={{ bgcolor: '#000', color: '#fff', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
+                    <AccessTimeIcon />
+                  </Avatar>
+                  <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>Attendance</Typography>
+                </Box>
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>Present:</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 900, color: '#2b8a3e' }}>{stats.attendanceToday.present}</Typography>
                   </Box>
-                  <Box sx={{ mb: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body1">Present:</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: theme.palette.success.main }}>
-                        {stats.attendanceToday.present}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body1">Absent:</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: theme.palette.error.main }}>
-                        {stats.attendanceToday.absent}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="body1">Late:</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: theme.palette.warning.main }}>
-                        {stats.attendanceToday.late}
-                      </Typography>
-                    </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>Absent:</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 900, color: '#c92a2a' }}>{stats.attendanceToday.absent}</Typography>
                   </Box>
-                  <Tooltip title="Mark your attendance">
-                    <Button
-                      size="medium"
-                      variant="outlined"
-                      color="success"
-                      endIcon={<ArrowForwardIcon />}
-                      onClick={() => navigate('/attendance')}
-                      sx={{ mt: 'auto' }}
-                      fullWidth
-                    >
-                      Mark Attendance
-                    </Button>
-                  </Tooltip>
-                </CardContent>
-              </Card>
-            </motion.div>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>Late:</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 900, color: '#e67700' }}>{stats.attendanceToday.late}</Typography>
+                  </Box>
+                </Box>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => navigate('/attendance')}
+                  sx={{ fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
+                  fullWidth
+                >
+                  Mark Attendance
+                </Button>
+              </CardContent>
+            </Card>
           </Grid>
 
-          {/* Pending leaves */}
+          {/* Real Pending Leaves */}
           <Grid item xs={12} sm={6} md={3}>
-            <motion.div whileHover="hover" variants={cardVariants}>
-              <Card
-                className="brutal-border brutal-shadow-hover"
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-                elevation={0}
-              >
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '5px',
-                    backgroundColor: theme.palette.warning.main
-                  }}
-                />
-                <CardContent sx={{ flexGrow: 1, pt: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Avatar sx={{ bgcolor: '#000000', color: '#FFFFFF', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
-                      <EventBusyIcon />
-                    </Avatar>
-                    <Typography variant="h6" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>
-                      {isAdminOrManager
-                        ? 'Pending'
-                        : 'My Leaves'
-                      }
-                    </Typography>
-                  </Box>
-                  <Typography
-                    variant="h3"
-                    component="div"
-                    sx={{
-                      mb: 2,
-                      color: theme.palette.warning.main,
-                      fontWeight: 'bold'
-                    }}
-                  >
-                    {stats.pendingLeaves}
+            <Card
+              sx={{
+                height: '100%',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000'
+              }}
+              elevation={0}
+            >
+              <CardContent sx={{ pt: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Avatar sx={{ bgcolor: '#000', color: '#fff', mr: 2, borderRadius: 0, border: '2px solid #000' }}>
+                    <EventBusyIcon />
+                  </Avatar>
+                  <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
+                    {isAdminOrManager ? 'Pending Leaves' : 'My Leaves'}
                   </Typography>
-                  <Tooltip title={currentUser?.role === 'Admin' || currentUser?.role === 'Manager'
-                    ? 'Review leave requests'
-                    : 'Request time off'
-                  }>
-                    <Button
-                      size="medium"
-                      variant="outlined"
-                      color="warning"
-                      endIcon={<ArrowForwardIcon />}
-                      onClick={() => currentUser?.role === 'Admin' || currentUser?.role === 'Manager'
-                        ? navigate('/leaves/pending')
-                        : navigate('/leaves')
-                      }
-                      sx={{ mt: 'auto' }}
-                      fullWidth
-                    >
-                      {isAdminOrManager
-                        ? 'Approve Leaves'
-                        : 'Request Leave'
-                      }
-                    </Button>
-                  </Tooltip>
-                </CardContent>
-              </Card>
-            </motion.div>
+                </Box>
+                <Typography variant="h3" sx={{ mb: 2, color: '#000', fontWeight: 900 }}>
+                  {stats.pendingLeaves}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => isAdminOrManager ? navigate('/leaves/pending') : navigate('/leaves')}
+                  sx={{ fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
+                  fullWidth
+                >
+                  {isAdminOrManager ? 'Approve Leaves' : 'View Leaves'}
+                </Button>
+              </CardContent>
+            </Card>
           </Grid>
         </Grid>
       </motion.div>
 
-      {/* Add charts section */}
+      {/* Real Charts Section (for Admin/Manager) */}
       {isAdminOrManager && (
-      <motion.div variants={itemVariants}>
-        <Paper
-          className="brutal-border brutal-shadow"
-          sx={{
-            p: 3,
-            mb: 4
-          }}
-          elevation={0}
-        >
-          <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-            <TrendingUpIcon sx={{ mr: 1 }} />
-            HR Analytics Overview
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 500, mb: 1 }}>Department Distribution</Typography>
-              <Paper sx={{ p: 2, borderRadius: 2, height: 250 }} elevation={0} variant="outlined">
-                <PieChart
-                  series={[
-                    {
-                      data: [
-                        { id: 0, value: 5, label: 'Engineering', color: theme.palette.primary.main },
-                        { id: 1, value: 3, label: 'Design', color: theme.palette.secondary.main },
-                        { id: 2, value: 2, label: 'Marketing', color: theme.palette.info.main },
-                        { id: 3, value: 1, label: 'HR', color: theme.palette.success.main },
-                      ],
-                      innerRadius: 30,
-                      outerRadius: 100,
-                      paddingAngle: 2,
-                      cornerRadius: 4,
-                      startAngle: -90,
-                      endAngle: 270,
-                      cx: 120,
-                      cy: 120,
-                    },
-                  ]}
-                  width={400}
-                  height={250}
-                  slotProps={{
-                    legend: { hidden: true },
-                  }}
-                />
-              </Paper>
+        <motion.div variants={itemVariants}>
+          <Paper
+            sx={{
+              p: 3,
+              mb: 4,
+              border: '3px solid #000',
+              borderRadius: 0,
+              boxShadow: '6px 6px 0px #000'
+            }}
+            elevation={0}
+          >
+            <Typography variant="h6" sx={{ mb: 3, fontWeight: 900, display: 'flex', alignItems: 'center', textTransform: 'uppercase' }}>
+              <TrendingUpIcon sx={{ mr: 1 }} />
+              Live Organization Analytics
+            </Typography>
+            <Grid container spacing={4}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, textTransform: 'uppercase' }}>
+                  Real Department Distribution
+                </Typography>
+                <Paper sx={{ p: 2, border: '2px solid #000', borderRadius: 0, height: 260, display: 'flex', justifyContent: 'center', alignItems: 'center' }} elevation={0}>
+                  <PieChart
+                    series={[
+                      {
+                        data: departmentPieData,
+                        innerRadius: 35,
+                        outerRadius: 95,
+                        paddingAngle: 2,
+                        cornerRadius: 0
+                      }
+                    ]}
+                    width={380}
+                    height={240}
+                  />
+                </Paper>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, textTransform: 'uppercase' }}>
+                  Recruitment &amp; Hires (Recent Months)
+                </Typography>
+                <Paper sx={{ p: 2, border: '2px solid #000', borderRadius: 0, height: 260 }} elevation={0}>
+                  <BarChart
+                    xAxis={[{
+                      scaleType: 'band',
+                      data: monthlyRecruitmentData.labels,
+                      tickLabelStyle: { fontSize: 12, fontWeight: 700 }
+                    }]}
+                    series={[
+                      {
+                        data: monthlyRecruitmentData.values,
+                        color: '#000',
+                        label: 'Hires'
+                      }
+                    ]}
+                    height={230}
+                    margin={{ top: 10, bottom: 30, left: 30, right: 10 }}
+                  />
+                </Paper>
+              </Grid>
             </Grid>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 500, mb: 1 }}>Monthly Recruitment</Typography>
-              <Paper sx={{ p: 2, borderRadius: 2, height: 250 }} elevation={0} variant="outlined">
-                <BarChart
-                  xAxis={[{
-                    scaleType: 'band',
-                    data: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                    tickLabelStyle: {
-                      fontSize: 12,
-                    },
-                  }]}
-                  series={[
-                    {
-                      data: [4, 3, 5, 7, 4, 6],
-                      color: theme.palette.primary.main,
-                      label: 'New Hires'
-                    },
-                  ]}
-                  height={250}
-                  margin={{ top: 10, bottom: 30, left: 40, right: 10 }}
-                />
-              </Paper>
-            </Grid>
-          </Grid>
-        </Paper>
-      </motion.div>
+          </Paper>
+        </motion.div>
       )}
 
-      {/* Recent activities and Quick Actions */}
+      {/* Recent Activities & Quick Actions */}
       <Grid container spacing={3}>
+        {/* Real Live Activity Feed */}
         <Grid item xs={12} md={isAdminOrManager ? 6 : 12}>
           <motion.div variants={itemVariants}>
-            <Card sx={{ borderRadius: 3 }} elevation={2}>
+            <Card sx={{ border: '3px solid #000', borderRadius: 0, boxShadow: '4px 4px 0px #000' }} elevation={0}>
               <CardHeader
                 title={
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <AccessTimeIcon sx={{ mr: 1 }} />
-                    Recent Activities
+                    <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>Recent Activity Feed</Typography>
                   </Box>
                 }
-                action={
-                  <IconButton aria-label="settings">
-                    <MoreVertIcon />
-                  </IconButton>
-                }
-                sx={{ pb: 1 }}
+                sx={{ borderBottom: '2px solid #000', bgcolor: '#f8f9fa' }}
               />
-              <Divider />
-              <CardContent sx={{ maxHeight: 350, overflow: 'auto', p: 0 }}>
+              <CardContent sx={{ maxHeight: 380, overflow: 'auto', p: 0 }}>
                 <List sx={{ pt: 0 }}>
                   {recentActivities.map((activity, index) => (
-                    <motion.div
-                      key={activity.id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 + 0.3 }}
-                    >
-                      <ListItem
-                        alignItems="flex-start"
-                        sx={{
-                          py: 2,
-                          transition: 'all 0.2s',
-                          '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.03)',
-                            transform: 'translateX(5px)'
-                          }
-                        }}
-                      >
-                        <ListItemIcon>
-                          <Avatar
-                            sx={{
-                              bgcolor: 'transparent',
-                              color: 'inherit'
-                            }}
-                          >
-                            {activity.icon}
-                          </Avatar>
+                    <React.Fragment key={activity.id}>
+                      <ListItem alignItems="flex-start" sx={{ py: 2 }}>
+                        <ListItemIcon sx={{ minWidth: 40 }}>
+                          {activity.icon}
                         </ListItemIcon>
                         <ListItemText
                           primary={
-                            <Typography sx={{ fontWeight: 500 }}>
+                            <Typography sx={{ fontWeight: 800, fontSize: '0.95rem' }}>
                               {activity.title}
                             </Typography>
                           }
                           secondary={
-                            <React.Fragment>
-                              <Typography
-                                component="span"
-                                variant="body2"
-                                sx={{ display: 'block', mb: 0.5 }}
-                              >
+                            <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+                              <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 600 }}>
                                 {activity.description}
                               </Typography>
-                              <Typography
-                                component="span"
-                                variant="caption"
-                                sx={{
-                                  display: 'inline-block',
-                                  px: 1,
-                                  py: 0.5,
-                                  borderRadius: 1,
-                                  bgcolor: 'rgba(0, 0, 0, 0.04)',
-                                  color: 'text.secondary'
-                                }}
-                              >
+                              <Typography component="span" variant="caption" sx={{ fontWeight: 800, color: 'text.secondary' }}>
                                 {activity.date}
                               </Typography>
-                            </React.Fragment>
+                            </Box>
                           }
                         />
                       </ListItem>
-                      {index < recentActivities.length - 1 && (
-                        <Divider component="li" variant="inset" />
-                      )}
-                    </motion.div>
+                      {index < recentActivities.length - 1 && <Divider />}
+                    </React.Fragment>
                   ))}
                 </List>
               </CardContent>
@@ -1128,172 +932,85 @@ const Dashboard = () => {
           </motion.div>
         </Grid>
 
-        {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-        <Grid item xs={12} md={6}>
-          <motion.div variants={itemVariants}>
-            <Card sx={{ borderRadius: 3 }} elevation={2}>
-              <CardHeader
-                title={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <AutoAwesomeIcon sx={{ mr: 1 }} />
-                    Quick Actions
-                  </Box>
-                }
-                action={
-                  <IconButton aria-label="settings">
-                    <MoreVertIcon />
-                  </IconButton>
-                }
-                sx={{ pb: 1 }}
-              />
-              <Divider />
-              <CardContent>
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+        {/* Quick Actions */}
+        {isAdminOrManager && (
+          <Grid item xs={12} md={6}>
+            <motion.div variants={itemVariants}>
+              <Card sx={{ border: '3px solid #000', borderRadius: 0, boxShadow: '4px 4px 0px #000' }} elevation={0}>
+                <CardHeader
+                  title={
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <AutoAwesomeIcon sx={{ mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>Quick Actions</Typography>
+                    </Box>
+                  }
+                  sx={{ borderBottom: '2px solid #000', bgcolor: '#f8f9fa' }}
+                />
+                <CardContent sx={{ p: 3 }}>
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
                       <Button
                         variant="contained"
                         fullWidth
                         startIcon={<AccessTimeIcon />}
                         onClick={() => navigate('/attendance')}
-                        sx={{
-                          mb: 2,
-                          py: 1.2,
-                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)'
-                        }}
-                        color="success"
+                        sx={{ mb: 2, py: 1.2, fontWeight: 900, bgcolor: '#000', color: '#fff', border: '2px solid #000', borderRadius: 0 }}
                       >
-                        Clock In/Out
+                        Attendance
                       </Button>
-                    </motion.div>
-
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-                      <Button
-                        variant="outlined"
-                        fullWidth
-                        startIcon={<NotificationsIcon />}
-                        onClick={() => navigate('/dashboard/notifications')}
-                        sx={{ mb: 2, py: 1.2 }}
-                      >
-                        Notifications
-                      </Button>
-                    </motion.div>
-
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                       <Button
                         variant="outlined"
                         fullWidth
                         startIcon={<PeopleIcon />}
                         onClick={() => navigate('/employees')}
-                        sx={{ mb: 2, py: 1.2 }}
+                        sx={{ mb: 2, py: 1.2, fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
                       >
-                        Employee Directory
+                        Directory
                       </Button>
-                    </motion.div>
-
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                       <Button
                         variant="outlined"
                         fullWidth
                         startIcon={<RateReviewIcon />}
                         onClick={() => navigate('/reviews/team-performance-review')}
-                        sx={{ mb: 2, py: 1.2 }}
+                        sx={{ mb: 2, py: 1.2, fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
                       >
                         Team Reviews
                       </Button>
-                    </motion.div>
-                  </Grid>
-
-                  <Grid item xs={6}>
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+                    </Grid>
+                    <Grid item xs={6}>
                       <Button
                         variant="contained"
-                        color="secondary"
                         fullWidth
                         startIcon={<EventIcon />}
-                        onClick={() => navigate('/leaves/request')}
-                        sx={{
-                          mb: 2,
-                          py: 1.2,
-                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)'
-                        }}
+                        onClick={() => navigate('/leaves/pending')}
+                        sx={{ mb: 2, py: 1.2, fontWeight: 900, bgcolor: '#fcc419', color: '#000', border: '2px solid #000', borderRadius: 0 }}
                       >
-                        Request Leave
+                        Approve Leaves
                       </Button>
-                    </motion.div>
-
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                       <Button
                         variant="outlined"
-                        color="secondary"
                         fullWidth
                         startIcon={<WorkIcon />}
                         onClick={() => navigate('/payroll')}
-                        sx={{ mb: 2, py: 1.2 }}
+                        sx={{ mb: 2, py: 1.2, fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
                       >
-                        View Payslips
+                        Payroll
                       </Button>
-                    </motion.div>
-
-                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
                       <Button
                         variant="outlined"
-                        color="primary"
                         fullWidth
                         startIcon={<InsightsIcon />}
                         onClick={() => navigate('/tools/talent-insights')}
-                        sx={{ mb: 2, py: 1.2 }}
+                        sx={{ mb: 2, py: 1.2, fontWeight: 800, border: '2px solid #000', color: '#000', borderRadius: 0 }}
                       >
-                        Talent Insights
+                        AI Insights
                       </Button>
-                    </motion.div>
-
-                    {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-                      <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          fullWidth
-                          startIcon={<PersonAddIcon />}
-                          onClick={() => navigate('/employees/add')}
-                          sx={{ mb: 2, py: 1.2 }}
-                        >
-                          Add Employee
-                        </Button>
-                      </motion.div>
-                    )}
+                    </Grid>
                   </Grid>
-                </Grid>
-
-                {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
-                  <>
-                    <Divider sx={{ my: 2 }} />
-                    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
-                        <Button
-                          variant="contained"
-                          color="info"
-                          onClick={() => navigate('/analytics/dashboard')}
-                          startIcon={<TimelineIcon />}
-                          size="large"
-                          sx={{
-                            py: 1.5,
-                            px: 3,
-                            borderRadius: 2,
-                            background: `linear-gradient(45deg, ${theme.palette.info.main}, ${theme.palette.info.dark})`,
-                            boxShadow: '0 8px 16px rgba(33, 150, 243, 0.3)'
-                          }}
-                        >
-                          HR Analytics Dashboard
-                        </Button>
-                      </motion.div>
-                    </Box>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        </Grid>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </Grid>
         )}
       </Grid>
     </motion.div>
@@ -1301,4 +1018,3 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
-

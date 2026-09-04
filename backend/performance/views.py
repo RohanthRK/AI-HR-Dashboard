@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from bson import ObjectId
 from datetime import datetime
-from hr_backend.db import db
+from hr_backend.db import db, employees, users
 
 # MongoDB collection
 collection = db.pips
@@ -23,17 +23,57 @@ def get_pips(request):
         # Privacy filter
         if user_role not in ['admin', 'hr', 'manager']:
             # Regular employees only see PIPs assigned to them
+            emp_query = {'$or': []}
             if employee_id:
-                query['employee_id'] = employee_id
+                emp_query['$or'].append({'employee_id': employee_id})
+                try:
+                    emp_query['$or'].append({'_id': ObjectId(employee_id)})
+                except Exception:
+                    pass
+            if user_id: 
+                emp_query['$or'].append({'user_id': str(user_id)})
+                try:
+                    emp_query['$or'].append({'_id': ObjectId(user_id)})
+                except Exception:
+                    pass
+            if hasattr(request, 'user_info') and request.user_info.get('email'):
+                emp_query['$or'].append({'email': request.user_info.get('email')})
+
+            emp_doc = employees.find_one(emp_query) if emp_query['$or'] else None
+            
+            raw_ids = [val for val in [
+                employee_id,
+                user_id,
+                str(emp_doc.get('_id', '')) if emp_doc else '',
+                emp_doc.get('employee_id', '') if emp_doc else '',
+                emp_doc.get('email', '') if emp_doc else ''
+            ] if val]
+            
+            emp_ids = []
+            for item in raw_ids:
+                s_item = str(item)
+                emp_ids.append(s_item)
+                if len(s_item) == 24:
+                    try:
+                        emp_ids.append(ObjectId(s_item))
+                    except Exception:
+                        pass
+            
+            if emp_ids:
+                query['employee_id'] = {'$in': emp_ids}
             else:
                 return JsonResponse({'status': 'success', 'data': []})
         else:
             # Managers/Admin can filter by employee_id if provided
             requested_id = request.GET.get('employee_id')
             if requested_id:
-                query['employee_id'] = requested_id
+                req_ids = [requested_id]
+                if len(requested_id) == 24:
+                    try: req_ids.append(ObjectId(requested_id))
+                    except Exception: pass
+                query['employee_id'] = {'$in': req_ids}
 
-        pips = list(collection.find(query))
+        pips = list(collection.find(query).sort('created_at', -1))
         for pip in pips:
             pip['_id'] = str(pip['_id'])
             
@@ -140,9 +180,36 @@ def pip_detail(request, pip_id):
             data = json.loads(request.body)
             update_fields = {'updated_at': datetime.utcnow().isoformat()}
             
+            # Resolve all valid IDs for the current user
+            emp_query = {'$or': []}
+            if employee_id_auth:
+                emp_query['$or'].append({'employee_id': employee_id_auth})
+                try:
+                    emp_query['$or'].append({'_id': ObjectId(employee_id_auth)})
+                except Exception:
+                    pass
+            if user_id: 
+                emp_query['$or'].append({'user_id': str(user_id)})
+                try:
+                    emp_query['$or'].append({'_id': ObjectId(user_id)})
+                except Exception:
+                    pass
+            if hasattr(request, 'user_info') and request.user_info.get('email'):
+                emp_query['$or'].append({'email': request.user_info.get('email')})
+
+            emp_doc = employees.find_one(emp_query) if emp_query['$or'] else None
+            
+            allowed_ids = [val for val in [
+                employee_id_auth,
+                user_id,
+                str(emp_doc.get('_id', '')) if emp_doc else '',
+                emp_doc.get('employee_id', '') if emp_doc else '',
+                emp_doc.get('email', '') if emp_doc else ''
+            ] if val]
+            
             # Use specific fields allowed for employees if not manager
             if user_role not in ['admin', 'manager', 'hr']:
-                if pip.get('employee_id') != employee_id_auth:
+                if str(pip.get('employee_id')) not in allowed_ids:
                     return JsonResponse({'status': 'error', 'message': 'Unauthorized'}, status=403)
                 # Only allow notes and maybe status updates of specific sub-goals
                 if 'employee_notes' in data:
@@ -155,13 +222,15 @@ def pip_detail(request, pip_id):
             
             # Find author name
             author_name = "User"
-            emp_doc = db.employees.find_one({'$or': [{'employee_id': employee_id_auth}, {'user_id': user_id}]})
             if emp_doc:
                 author_name = f"{emp_doc.get('first_name', '')} {emp_doc.get('last_name', '')}".strip() or author_name
             else:
-                user_doc = db.users.find_one({'_id': ObjectId(user_id)})
-                if user_doc:
-                    author_name = user_doc.get('username') or user_doc.get('email', author_name)
+                try:
+                    user_doc = users.find_one({'_id': ObjectId(user_id)})
+                    if user_doc:
+                        author_name = user_doc.get('username') or user_doc.get('email', author_name)
+                except Exception:
+                    pass
 
             # Prepare notes to push
             notes_to_push = []
@@ -177,10 +246,10 @@ def pip_detail(request, pip_id):
                 })
 
             # Append new manual note if provided
-            new_note = data.get('new_note')
-            if new_note:
+            new_note = data.get('new_note') or data.get('comment')
+            if new_note and isinstance(new_note, str) and new_note.strip():
                 notes_to_push.append({
-                    'text': new_note,
+                    'text': new_note.strip(),
                     'author': author_name,
                     'timestamp': datetime.utcnow().isoformat(),
                     'role': user_role

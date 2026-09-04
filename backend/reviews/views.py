@@ -9,7 +9,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from functools import wraps
 
-from hr_backend.db import reviews, employees, team_reviews
+from hr_backend.db import reviews, employees, team_reviews, users, teams
 from utils.api_utils import (
     serialize_document, 
     create_crud_endpoints,
@@ -157,6 +157,13 @@ def get_my_performance_reviews(request):
             pass
     if emp_code:
         emp_search_queries.append({'employee_id': emp_code})
+        try:
+            emp_search_queries.append({'_id': ObjectId(emp_code)})
+        except:
+            pass
+        emp_search_queries.append({'_id': emp_code})
+    if hasattr(request, 'user_info') and request.user_info.get('email'):
+        emp_search_queries.append({'email': request.user_info.get('email')})
         
     if emp_search_queries:
         found_employees = list(employees.find({'$or': emp_search_queries}))
@@ -180,6 +187,19 @@ def get_my_performance_reviews(request):
                 team_ids.append(emp_doc.get('team'))
             if emp_doc.get('department'):
                 team_ids.append(emp_doc.get('department'))
+
+    # Also directly look for teams the user is member of or manager of
+    user_teams = list(teams.find({
+        '$or': [
+            {'manager_id': {'$in': possible_ids}},
+            {'employees.id': {'$in': [str(p) for p in possible_ids]}},
+            {'employees.employee_id': {'$in': [str(p) for p in possible_ids]}},
+            {'employees.email': request.user_info.get('email', '') if hasattr(request, 'user_info') else ''}
+        ]
+    }))
+    for ut in user_teams:
+        team_ids.append(str(ut['_id']))
+        team_ids.append(ut.get('name'))
     
     # Add unique IDs but PRESERVE TYPES (important for MongoDB $in queries)
     # MongoDB treats "65a..." (string) and ObjectId("65a...") as different values.
@@ -355,21 +375,35 @@ def submit_review(request, review_id):
         reviewer_name = 'Manager'
         
         # Resolve reviewer details
-        user_query = {'$or': [{'user_id': request.user_id}]}
-        try:
-            user_query['$or'].append({'user_id': ObjectId(request.user_id)})
-        except:
-            pass
+        emp_query = {'$or': []}
+        if reviewer_id: emp_query['$or'].append({'employee_id': reviewer_id})
+        if request.user_id:
+            emp_query['$or'].append({'user_id': str(request.user_id)})
+            try: emp_query['$or'].append({'_id': ObjectId(request.user_id)})
+            except: pass
             
-        emp_doc = employees.find_one(user_query)
+        emp_doc = employees.find_one(emp_query) if emp_query['$or'] else None
         if emp_doc:
             reviewer_id = emp_doc.get('employee_id') or str(emp_doc['_id'])
             reviewer_name = f"{emp_doc.get('first_name', '')} {emp_doc.get('last_name', '')}".strip() or reviewer_name
         else:
-            # Fallback to User collection if Employee record doesn't exist (e.g. for Super Admin)
-            user_doc = users.find_one({'_id': ObjectId(request.user_id)})
-            if user_doc:
-                reviewer_name = user_doc.get('username') or user_doc.get('email', 'Manager')
+            try:
+                user_doc = users.find_one({'_id': ObjectId(request.user_id)})
+                if user_doc:
+                    reviewer_name = user_doc.get('username') or user_doc.get('email', 'Manager')
+            except Exception:
+                pass
+        
+        # Resolve target employee name
+        target_emp_query = {'$or': [{'employee_id': review_id}]}
+        try:
+            target_emp_query['$or'].append({'_id': ObjectId(review_id)})
+        except:
+            pass
+        target_emp = employees.find_one(target_emp_query)
+        emp_name = data.get('employee_name')
+        if not emp_name and target_emp:
+            emp_name = f"{target_emp.get('first_name', '')} {target_emp.get('last_name', '')}".strip()
         
         # Support both flat and nested scores
         scores = data.get('scores', {})
@@ -390,7 +424,8 @@ def submit_review(request, review_id):
         now = datetime.datetime.now().isoformat()
         update_data = {
             'employee_id': review_id,
-            'reviewer_id': reviewer_id,
+            'employee_name': emp_name or 'Employee',
+            'reviewer_id': reviewer_id or str(request.user_id),
             'reviewer_name': reviewer_name,
             'scores': metrics,
             'average_score': float(avg_score),
@@ -408,7 +443,7 @@ def submit_review(request, review_id):
         # Query for upsert - include reviewer_id so different managers can review the same person
         query = {
             'employee_id': review_id,
-            'reviewer_id': reviewer_id
+            'reviewer_id': reviewer_id or str(request.user_id)
         }
             
         result = reviews.update_one(query, {'$set': update_data}, upsert=True)

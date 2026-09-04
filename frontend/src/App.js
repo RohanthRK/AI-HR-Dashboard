@@ -99,6 +99,7 @@ function App() {
               <Route path="/expenses" element={<PrivateRoute><Layout><Expenses /></Layout></PrivateRoute>} />
               <Route path="/assets" element={<PrivateRoute><Layout><Assets /></Layout></PrivateRoute>} />
               <Route path="/helpdesk" element={<PrivateRoute><Layout><Helpdesk /></Layout></PrivateRoute>} />
+              <Route path="/help-center" element={<Navigate to="/helpdesk" replace />} />
               <Route path="/signup" element={<PrivateRoute allowedRoles={['Admin']}><Layout><Signup /></Layout></PrivateRoute>} />
               <Route path="/search" element={<Navigate to="/employees" replace />} />
 

@@ -55,14 +55,27 @@ def handle_assets(request):
             return JsonResponse({'success': False, 'error': 'Permission denied. Admins only.'}, status=403)
         try:
             data = json.loads(request.body)
+            author_name = request.user_info.get('username', 'Admin') if hasattr(request, 'user_info') else 'Admin'
+            
             # Automatic ownership tagging
             if employee_id:
                 data['employee_id'] = employee_id
             if user_id:
                 data['user_id'] = user_id
                 
-            data['status'] = data.get('status', 'Available')
+            assigned_to = data.get('assignedTo', '').strip()
+            data['status'] = 'Assigned' if assigned_to else 'Available'
             data['createdAt'] = datetime.utcnow().isoformat()
+            
+            # Initialize history timeline
+            initial_history = {
+                'text': f"Asset registered in inventory and assigned to {assigned_to}" if assigned_to else "Asset registered in inventory as Available",
+                'createdAt': datetime.utcnow().isoformat(),
+                'author': author_name,
+                'is_system': True,
+                'assignedTo': assigned_to or 'Unassigned'
+            }
+            data['history'] = [initial_history]
             
             result = assets_collection.insert_one(data)
             data['_id'] = str(result.inserted_id)
@@ -76,10 +89,6 @@ def handle_assets(request):
 @csrf_exempt
 def handle_asset_detail(request, asset_id):
     user_role = getattr(request, 'role', '').lower()
-    
-    if request.method in ['PUT', 'PATCH', 'DELETE']:
-        if user_role != 'admin':
-            return JsonResponse({'success': False, 'error': 'Permission denied. Admins only.'}, status=403)
 
     try:
         obj_id = ObjectId(asset_id)
@@ -94,25 +103,77 @@ def handle_asset_detail(request, asset_id):
         return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)
 
     elif request.method in ['PUT', 'PATCH']:
+        if user_role != 'admin':
+            return JsonResponse({'success': False, 'error': 'Permission denied. Only Admins can modify assets or post updates.'}, status=403)
+
         try:
             data = json.loads(request.body)
-            data.pop('_id', None) 
-            data['updatedAt'] = datetime.utcnow().isoformat()
-            
-            result = assets_collection.update_one(
-                {'_id': obj_id},
-                {'$set': data}
-            )
-            
-            if result.modified_count:
-                updated_asset = assets_collection.find_one({'_id': obj_id})
-                updated_asset['_id'] = str(updated_asset['_id'])
-                return JsonResponse({'success': True, 'asset': updated_asset})
-            return JsonResponse({'success': False, 'error': 'Asset not found or no changes made'}, status=404)
+            author_name = request.user_info.get('username', 'Admin') if hasattr(request, 'user_info') else 'Admin'
+            current_asset = assets_collection.find_one({'_id': obj_id})
+            if not current_asset:
+                return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)
+
+            # Check if this is a comment / note update
+            if '/comment' in request.path or 'comment' in data:
+                comment_text = data.get('comment')
+                if comment_text:
+                    history_entry = {
+                        'text': comment_text,
+                        'createdAt': datetime.utcnow().isoformat(),
+                        'author': author_name,
+                        'is_system': False,
+                        'assignedTo': current_asset.get('assignedTo', 'Unassigned')
+                    }
+                    assets_collection.update_one(
+                        {'_id': obj_id},
+                        {
+                            '$push': {'history': history_entry},
+                            '$set': {'updatedAt': datetime.utcnow().isoformat()}
+                        }
+                    )
+            else:
+                data.pop('_id', None)
+                data['updatedAt'] = datetime.utcnow().isoformat()
+                
+                new_assigned = data.get('assignedTo')
+                old_assigned = current_asset.get('assignedTo', 'Unassigned')
+                new_status = data.get('status')
+                old_status = current_asset.get('status', 'Available')
+
+                history_entries = []
+                if new_assigned is not None and new_assigned != old_assigned:
+                    history_entries.append({
+                        'text': f"Asset reassigned from {old_assigned or 'Unassigned'} to {new_assigned or 'Unassigned'}",
+                        'createdAt': datetime.utcnow().isoformat(),
+                        'author': author_name,
+                        'is_system': True,
+                        'assignedTo': new_assigned or 'Unassigned'
+                    })
+                if new_status is not None and new_status != old_status:
+                    history_entries.append({
+                        'text': f"Status updated from {old_status} to {new_status}",
+                        'createdAt': datetime.utcnow().isoformat(),
+                        'author': author_name,
+                        'is_system': True,
+                        'assignedTo': new_assigned if new_assigned is not None else old_assigned
+                    })
+
+                update_ops = {'$set': data}
+                if history_entries:
+                    update_ops['$push'] = {'history': {'$each': history_entries}}
+
+                assets_collection.update_one({'_id': obj_id}, update_ops)
+
+            updated_asset = assets_collection.find_one({'_id': obj_id})
+            updated_asset['_id'] = str(updated_asset['_id'])
+            return JsonResponse({'success': True, 'asset': updated_asset})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
     elif request.method == 'DELETE':
+        if user_role != 'admin':
+            return JsonResponse({'success': False, 'error': 'Permission denied. Admins only.'}, status=403)
+
         result = assets_collection.delete_one({'_id': obj_id})
         if result.deleted_count:
             return JsonResponse({'success': True, 'message': 'Asset deleted'})

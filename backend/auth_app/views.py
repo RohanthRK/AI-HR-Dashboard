@@ -96,23 +96,37 @@ def login(request):
         
         # Get employee additional details
         employee_data = {}
+        emp_query = {'$or': []}
         if user.get('employee_id'):
-            emp_doc = employees.find_one({'employee_id': user['employee_id']})
-            if emp_doc:
-                employee_data = {
-                    'first_name': emp_doc.get('first_name', ''),
-                    'last_name': emp_doc.get('last_name', ''),
-                    'department': emp_doc.get('department', ''),
-                    'team': emp_doc.get('team', ''),
-                    'department_id': str(emp_doc.get('department_id', '')),
-                    'team_id': str(emp_doc.get('team_id', ''))
-                }
+            emp_query['$or'].append({'employee_id': user['employee_id']})
+            try:
+                emp_query['$or'].append({'_id': ObjectId(user['employee_id'])})
+            except Exception:
+                pass
+        if user.get('email'):
+            emp_query['$or'].append({'email': user['email']})
+        if user.get('_id'):
+            emp_query['$or'].append({'user_id': str(user['_id'])})
+            emp_query['$or'].append({'user_id': user['_id']})
+            
+        emp_doc = employees.find_one(emp_query) if emp_query['$or'] else None
+        if emp_doc:
+            employee_data = {
+                'first_name': emp_doc.get('first_name', ''),
+                'last_name': emp_doc.get('last_name', ''),
+                'department': emp_doc.get('department', ''),
+                'team': emp_doc.get('team', ''),
+                'department_id': str(emp_doc.get('department_id', '')),
+                'team_id': str(emp_doc.get('team_id', '')),
+                'employee_code': emp_doc.get('employee_id', '')
+            }
         
         payload = {
             'user_id': str(user['_id']),
             'username': user['username'],
+            'email': user.get('email', ''),
             'role': role_name,
-            'employee_id': user.get('employee_id', ''),
+            'employee_id': user.get('employee_id', '') or (str(emp_doc['_id']) if emp_doc else ''),
             'exp': expiry,
             **employee_data
         }
@@ -131,7 +145,7 @@ def login(request):
                 'username': user['username'],
                 'role': role_name,
                 'email': user.get('email', ''),
-                'employee_id': user.get('employee_id', ''),
+                'employee_id': user.get('employee_id', '') or (str(emp_doc['_id']) if emp_doc else ''),
                 'expires': expiry.isoformat(),
                 **employee_data
             }

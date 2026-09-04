@@ -31,9 +31,11 @@ import PageHeader from '../../components/PageHeader';
 import { useNavigate } from 'react-router-dom';
 import reviewService from '../../services/reviewService';
 import employeeService from '../../services/employeeService';
+import { useAuth } from '../../contexts/AuthContext';
 
 const Reviews = ({ isComponent = false }) => {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState([]);
   const [filteredEmployees, setFilteredEmployees] = useState([]);
@@ -50,8 +52,33 @@ const Reviews = ({ isComponent = false }) => {
       setError(null);
       
       // Fetch employees
-      const employeeData = await employeeService.getAllEmployees();
-      setEmployees(employeeData || []);
+      let employeeData = await employeeService.getAllEmployees();
+      employeeData = employeeData || [];
+
+      // If Manager, filter to only the team people they manage or are part of
+      if (currentUser?.role === 'Manager') {
+        const userTeam = (currentUser.team || '').toLowerCase();
+        const userTeamId = currentUser.team_id ? String(currentUser.team_id) : '';
+        const myEmpId = currentUser.employee_id || currentUser.id;
+        const myUsername = currentUser.username;
+
+        employeeData = employeeData.filter(emp => {
+          const isSelf = (myEmpId && (emp.employee_id === myEmpId || emp._id === myEmpId || emp.id === myEmpId)) ||
+                         (currentUser?.email && emp.email?.toLowerCase() === currentUser.email.toLowerCase());
+          if (isSelf) return false;
+
+          const empTeam = (emp.team || '').toLowerCase();
+          const empTeamId = emp.team_id ? String(emp.team_id) : '';
+          const empManager = emp.manager || emp.manager_id || '';
+
+          const isDirectReport = empManager === myEmpId || empManager === myUsername || (currentUser.first_name && empManager.includes(currentUser.first_name));
+          const isSameTeam = (userTeam && empTeam === userTeam) || (userTeamId && empTeamId === userTeamId);
+          
+          return isDirectReport || isSameTeam;
+        });
+      }
+
+      setEmployees(employeeData);
       
       // Extract unique departments
       const deptNames = ['All', ...new Set(employeeData.map(emp => emp.department).filter(Boolean))];
@@ -76,7 +103,7 @@ const Reviews = ({ isComponent = false }) => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [currentUser]);
 
   // Handle Search and Filter
   useEffect(() => {
@@ -128,14 +155,18 @@ const Reviews = ({ isComponent = false }) => {
           </Grid>
           <Grid item xs={12} sm={4}>
             <Box textAlign="center">
-              <Typography variant="h3" sx={{ fontWeight: 900, color: '#000' }}>{reviews.filter(r => r.status === 'Completed').length}</Typography>
+              <Typography variant="h3" sx={{ fontWeight: 900, color: '#000' }}>
+                {reviews.filter(r => r.status === 'Completed' || r.submission_date || r.average_score).length}
+              </Typography>
               <Typography variant="h6" sx={{ color: '#000', textTransform: 'uppercase', fontWeight: 700 }}>Completed Reviews</Typography>
             </Box>
           </Grid>
           <Grid item xs={12} sm={4}>
             <Box textAlign="center">
-              <Typography variant="h3" sx={{ fontWeight: 900, color: '#000' }}>{reviews.filter(r => r.status !== 'Completed').length}</Typography>
-              <Typography variant="h6" sx={{ color: '#000', textTransform: 'uppercase', fontWeight: 700 }}>Pending Actions</Typography>
+              <Typography variant="h3" sx={{ fontWeight: 900, color: '#000' }}>
+                {Math.max(0, employees.length - reviews.filter(r => r.status === 'Completed' || r.submission_date || r.average_score).length)}
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#000', textTransform: 'uppercase', fontWeight: 700 }}>Pending Reviews</Typography>
             </Box>
           </Grid>
         </Grid>
@@ -225,7 +256,8 @@ const Reviews = ({ isComponent = false }) => {
                     const employeeReviews = reviews.filter(
                       rev => rev.employee_id === employee.id || rev.employee_id === employee._id || rev.employee_id === employee.employee_id
                     );
-                    const hasCurrentReview = employeeReviews.some(rev => rev.status !== 'Completed');
+                    const isCompleted = employeeReviews.some(rev => rev.status === 'Completed' || rev.submission_date || rev.average_score != null);
+                    const isInProgress = !isCompleted && employeeReviews.some(rev => rev.status === 'In Progress');
                     
                     return (
                       <TableRow key={employee.id || employee._id} sx={{ '&:hover': { bgcolor: '#f9f9f9' } }}>
@@ -248,8 +280,8 @@ const Reviews = ({ isComponent = false }) => {
                         <TableCell sx={{ fontWeight: 600 }}>{employee.position || '—'}</TableCell>
                         <TableCell>
                           <Chip 
-                            label={hasCurrentReview ? 'In Progress' : 'Ready for Review'} 
-                            color={hasCurrentReview ? 'info' : 'success'} 
+                            label={isCompleted ? 'Completed' : (isInProgress ? 'In Progress' : 'Ready for Review')} 
+                            color={isCompleted ? 'success' : (isInProgress ? 'info' : 'warning')} 
                             size="small" 
                             variant="filled"
                             sx={{ fontWeight: 900, border: '2px solid #000', borderRadius: 0 }}
@@ -258,12 +290,12 @@ const Reviews = ({ isComponent = false }) => {
                         <TableCell>
                           <Button 
                             size="small" 
-                            variant="contained"
+                            variant={isCompleted ? 'outlined' : 'contained'}
                             color="primary"
                             onClick={() => handleReviewEmployee(employee.id || employee._id || employee.employee_id)}
-                            sx={{ fontWeight: 900, border: '2px solid #000', borderRadius: 0, boxShadow: '2px 2px 0px #000' }}
+                            sx={{ fontWeight: 900, border: '2px solid #000', borderRadius: 0, boxShadow: isCompleted ? 'none' : '2px 2px 0px #000' }}
                           >
-                            Review
+                            {isCompleted ? 'View Review' : 'Complete Review'}
                           </Button>
                         </TableCell>
                       </TableRow>

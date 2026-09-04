@@ -2,42 +2,7 @@ import axios from 'axios';
 
 const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/reviews`;
 
-// Mock data for development/fallback
-const mockReviews = [
-  { 
-    _id: '1',
-    id: '1',
-    period: 'Q1 2023', 
-    reviewer_name: 'Jane Smith',
-    reviewer_id: '101',
-    employee_id: '201',
-    status: 'Completed', 
-    rating: 4.5,
-    review_date: '2023-03-15'
-  },
-  { 
-    _id: '2',
-    id: '2',
-    period: 'Q2 2023', 
-    reviewer_name: 'John Doe',
-    reviewer_id: '102',
-    employee_id: '202',
-    status: 'Pending', 
-    rating: null,
-    review_date: null
-  },
-  { 
-    _id: '3',
-    id: '3',
-    period: 'Q3 2023', 
-    reviewer_name: 'Michael Johnson',
-    reviewer_id: '103',
-    employee_id: '203',
-    status: 'In Progress', 
-    rating: null,
-    review_date: null
-  },
-];
+
 
 // Create axios instance with default config
 const reviewAPI = axios.create({
@@ -166,7 +131,7 @@ const reviewService = {
   // Get reviews assigned to me to complete
   getMyAssignedReviews: async (params = {}) => {
     try {
-      const response = await reviewAPI.get('/assigned/me', { params });
+      const response = await reviewAPI.get('/assigned/me/', { params });
       return response.data;
     } catch (error) {
       throw error;
@@ -176,52 +141,22 @@ const reviewService = {
   // Get my performance reviews (reviews about me)
   getMyPerformanceReviews: async (params = {}) => {
     try {
-      try {
-        const response = await reviewAPI.get('/me', { params });
-        return response.data;
-      } catch (apiError) {
-        console.warn('API call for my reviews failed, using mock data:', apiError.message);
-        // Return mock reviews
-        return mockReviews;
-      }
+      const response = await reviewAPI.get('/me/', { params });
+      return response.data;
     } catch (error) {
       console.error('Error in getMyPerformanceReviews:', error);
-      // Return mock data as fallback
-      return mockReviews;
+      return { results: [], count: 0 };
     }
   },
 
   // Get review details by ID
   getReviewById: async (reviewId) => {
     try {
-      try {
-        const response = await reviewAPI.get(`/${reviewId}`);
-        return response.data;
-      } catch (apiError) {
-        console.warn(`API call for review ${reviewId} failed, using mock data:`, apiError.message);
-        // Return a mock review for the given ID
-        return mockReviews.find(r => r.id === reviewId || r._id === reviewId) || {
-          _id: reviewId,
-          id: reviewId,
-          period: 'Current',
-          reviewer_name: 'System',
-          status: 'Pending',
-          rating: null,
-          review_date: null
-        };
-      }
+      const response = await reviewAPI.get(`/${reviewId}/`);
+      return response.data;
     } catch (error) {
       console.error('Error in getReviewById:', error);
-      // Return a basic mock review as fallback
-      return {
-        _id: reviewId,
-        id: reviewId,
-        period: 'Current',
-        reviewer_name: 'System',
-        status: 'Pending',
-        rating: null,
-        review_date: null
-      };
+      throw error;
     }
   },
 
@@ -258,20 +193,11 @@ const reviewService = {
   // Get all reviews (admin/HR function)
   getAllReviews: async (params = {}) => {
     try {
-      console.log('Attempting to fetch reviews from API');
-      try {
-        const response = await reviewAPI.get('/', { params });
-        console.log('API response successful:', response.data);
-        return response.data;
-      } catch (apiError) {
-        console.warn('API call failed, using mock data:', apiError.message);
-        // Return mock data when API fails
-        return mockReviews;
-      }
+      const response = await reviewAPI.get('/', { params });
+      return response.data;
     } catch (error) {
       console.error('Error in getAllReviews:', error);
-      // Return mock data as a fallback
-      return mockReviews;
+      throw error;
     }
   },
 

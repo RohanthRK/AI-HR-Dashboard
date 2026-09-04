@@ -879,13 +879,18 @@ class TeamReviewsView(APIView):
     """
     
     def get(self, request):
-        """Get all team reviews"""
+        """Get all team reviews with optional filtering"""
         try:
             # Import the team_reviews collection from db
             from hr_backend.db import team_reviews
             
-            # Get all team reviews
-            all_reviews = list(team_reviews.find())
+            query = {}
+            team_id = request.query_params.get('team_id')
+            if team_id:
+                query = {'$or': [{'team_id': team_id}, {'team_name': team_id}]}
+                
+            # Get team reviews sorted newest first
+            all_reviews = list(team_reviews.find(query).sort('created_at', -1))
             
             # Format the reviews
             formatted_reviews = []
