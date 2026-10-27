@@ -4,9 +4,20 @@ from django.views.decorators.csrf import csrf_exempt
 from bson import ObjectId
 from datetime import datetime
 from hr_backend.db import db, employees, teams, departments
+from utils.auth_utils import is_privileged, owns_employee, forbidden
 
 # MongoDB collection
 collection = db.objectives
+
+def _can_access(request, objective, write=False):
+    """Privileged roles always; owners for their own objectives; anyone may read team-scope objectives."""
+    if is_privileged(request):
+        return True
+    owner = objective.get('employee_id')
+    if owner:
+        return owns_employee(request, owner)
+    return not write
+
 
 @csrf_exempt
 def get_objectives(request):
@@ -157,7 +168,7 @@ def create_objective(request):
     POST: Create a new objective
     """
     # Extract user info
-    user_id = getattr(request, 'user_id', None)
+    getattr(request, 'user_id', None)
     employee_id_auth = getattr(request, 'employee_id', None)
     user_role = getattr(request, 'role', '').lower()
 
@@ -238,6 +249,10 @@ def objective_detail(request, objective_id):
         obj_id = ObjectId(objective_id)
     except:
         return JsonResponse({'status': 'error', 'message': 'Invalid ID format'}, status=400)
+
+    existing = collection.find_one({'_id': obj_id})
+    if existing and not _can_access(request, existing, write=request.method != 'GET'):
+        return forbidden()
         
     if request.method == 'GET':
         objective = collection.find_one({'_id': obj_id})
@@ -285,6 +300,9 @@ def update_progress(request, objective_id):
     if request.method == 'PATCH':
         try:
             obj_id = ObjectId(objective_id)
+            existing = collection.find_one({'_id': obj_id})
+            if existing and not _can_access(request, existing, write=True):
+                return forbidden()
             data = json.loads(request.body)
             
             new_progress = data.get('progress')

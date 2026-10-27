@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+
 import { useParams, useNavigate, Link } from 'react-router-dom';
+
 import {
   Container,
   Typography,
@@ -7,17 +9,10 @@ import {
   Box,
   Card,
   CardContent,
-  Grid,
   Avatar,
   Chip,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemAvatar,
   Button,
-  IconButton,
-  Tooltip,
   CircularProgress,
   Alert,
   Tabs,
@@ -27,23 +22,26 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Person as PersonIcon,
-  Group as GroupIcon,
   ArrowBack as ArrowBackIcon,
   Edit as EditIcon,
   Email as EmailIcon,
   Phone as PhoneIcon,
-  Business as BusinessIcon,
   WorkOutline as PositionIcon,
   Badge as BadgeIcon,
-  Work as WorkIcon
+  Work as WorkIcon,
 } from '@mui/icons-material';
 import aiService from '../../services/aiService';
+import api from '../../services/api';
+import { formatDate, formatMoney } from '../../utils/format';
+
 
 import { useAuth } from '../../contexts/AuthContext';
+
 
 const TeamDetail = () => {
   const { id } = useParams();
@@ -55,10 +53,9 @@ const TeamDetail = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [fetchTime, setFetchTime] = useState(Date.now());
 
-  const isAdminOrManager = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
-  const isTeamLeader = team?.leader?.employee_id === currentUser?.employee_id;
-  const isTeamManager = team?.manager?.employee_id === currentUser?.employee_id;
-  const canEditTeam = isAdminOrManager || isTeamLeader || isTeamManager;
+  const isMe = (m) => Boolean(m) && (m.id === currentUser?.employee_id || (currentUser?.employee_code && m.employee_id === currentUser.employee_code));
+  // administrators edit any team; a manager only the teams they manage or lead
+  const canEditTeam = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && (isMe(team?.leader) || isMe(team?.manager)));
   
   // Allow re-fetching by updating fetchTime when navigating back to this page
   useEffect(() => {
@@ -91,49 +88,36 @@ const TeamDetail = () => {
               id: matchingTeam.id,
               name: matchingTeam.name,
               department: dept.name,
-              description: `This team is part of the ${dept.name} department and consists of ${matchingTeam.employee_count} team members working together on various projects.`,
+              description: matchingTeam.description || `${matchingTeam.name} is part of the ${dept.name} department.`,
               leader: teamLeader ? {
                 id: teamLeader.id,
                 name: teamLeader.name,
                 position: teamLeader.position || 'Team Lead',
-                email: teamLeader.email || `${teamLeader.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
-                phone: teamLeader.phone || 'N/A',
+                email: teamLeader.email || '',
+                phone: teamLeader.phone || '',
                 employee_id: teamLeader.employee_id || teamLeader.id
               } : null,
               manager: teamManager ? {
                 id: teamManager.id,
                 name: teamManager.name,
                 position: teamManager.position || 'Manager',
-                email: teamManager.email || `${teamManager.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
-                phone: teamManager.phone || 'N/A',
+                email: teamManager.email || '',
+                phone: teamManager.phone || '',
                 employee_id: teamManager.employee_id || teamManager.id
               } : null,
               members: matchingTeam.employees.map(employee => ({
                 id: employee.id,
                 name: employee.name,
                 position: employee.position || 'Team Member',
-                email: employee.email || `${employee.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
-                phone: employee.phone || 'N/A',
+                email: employee.email || '',
+                phone: employee.phone || '',
                 employee_id: employee.employee_id || employee.id,
                 hire_date: employee.hire_date || null,
                 is_leader: employee.is_leader,
                 is_manager: employee.is_manager
               })),
-              projects: [
-                { 
-                  id: `${matchingTeam.id}-1`, 
-                  name: `${matchingTeam.name} Primary Project`, 
-                  status: 'In Progress',
-                  description: `Main ongoing project for the ${matchingTeam.name} team.`
-                },
-                { 
-                  id: `${matchingTeam.id}-2`, 
-                  name: `${dept.name} Collaboration`, 
-                  status: Math.random() > 0.5 ? 'Completed' : 'Planning',
-                  description: `Collaborative project with other teams in the ${dept.name} department.`
-                }
-              ],
-              created_at: new Date(Date.now() - Math.floor(Math.random() * 1000 * 60 * 60 * 24 * 365)).toISOString(),
+              projects: [],
+              created_at: matchingTeam.created_at || null,
               updated_at: new Date().toISOString()
             };
             break;
@@ -142,6 +126,12 @@ const TeamDetail = () => {
       }
         
         if (foundTeam) {
+          try {
+            const res = await api.get('/api/projects/', { params: { team_id: foundTeam.id, limit: 50 } });
+            foundTeam.projects = res.data.results || [];
+          } catch (e) {
+            foundTeam.projects = [];
+          }
           setTeam(foundTeam);
         } else {
           setError('Team not found');
@@ -309,15 +299,7 @@ const TeamDetail = () => {
                     Created
                   </Typography>
                   <Typography variant="body2">
-                    {new Date(team.created_at).toLocaleDateString()}
-                  </Typography>
-                </Box>
-                <Box display="flex" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">
-                    Last Updated
-                  </Typography>
-                  <Typography variant="body2">
-                    {new Date(team.updated_at).toLocaleDateString()}
+                    {formatDate(team.created_at)}
                   </Typography>
                 </Box>
               </CardContent>
@@ -419,7 +401,7 @@ const TeamDetail = () => {
                         </Box>
                       </TableCell>
                       <TableCell>
-                        {new Date(member.hire_date).toLocaleDateString()}
+                        {formatDate(member.hire_date)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -439,24 +421,29 @@ const TeamDetail = () => {
             ) : (
               <Grid container spacing={3}>
                 {team.projects.map((project) => (
-                  <Grid item xs={12} md={6} lg={4} key={project.id}>
-                    <Card variant="outlined">
+                  <Grid item xs={12} md={6} lg={4} key={project.id || project._id}>
+                    <Card variant="outlined" sx={{ height: '100%' }}>
                       <CardContent>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                          <Typography variant="h6">{project.name}</Typography>
-                          <Chip 
-                            label={project.status} 
-                            color={
-                              project.status === 'Completed' ? 'success' : 
-                              project.status === 'In Progress' ? 'primary' : 
-                              'warning'
-                            }
+                        <Box display="flex" justifyContent="space-between" alignItems="flex-start" gap={1} mb={1}>
+                          <Typography variant="h6" sx={{ fontSize: '1.05rem' }}>{project.name}</Typography>
+                          <Chip
+                            label={project.status}
+                            color={project.status === 'Completed' ? 'success' : project.status === 'In Progress' ? 'primary' : project.status === 'On Hold' ? 'default' : 'warning'}
                             size="small"
                           />
                         </Box>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                           {project.description || 'No description available.'}
                         </Typography>
+                        <Typography variant="caption" display="block">
+                          {formatDate(project.start_date)} – {formatDate(project.end_date)}
+                          {project.priority ? ` · ${project.priority} priority` : ''}
+                        </Typography>
+                        {project.budget > 0 && (
+                          <Typography variant="caption" display="block" color="text.secondary">
+                            Budget {formatMoney(project.budget)} · spent {formatMoney(project.budget_spent || 0)}
+                          </Typography>
+                        )}
                       </CardContent>
                     </Card>
                   </Grid>

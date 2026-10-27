@@ -242,49 +242,7 @@ const SkillsTab = () => {
         </Button>
       </Box>
 
-      {/* Master Skills Catalog Pool */}
-      {masterSkills && masterSkills.length > 0 && (
-        <Box sx={{ mb: 4, p: 3, border: '2px dashed #000', bgcolor: theme.palette.mode === 'dark' ? '#1e293b' : '#fff9db' }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 900, textTransform: 'uppercase', color: '#f59f00', display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-            💡 Available Company Skills Pool (Click to add with default score 8/10):
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {masterSkills.map((ms, idx) => {
-              const name = typeof ms === 'string' ? ms : ms.name;
-              const isAlreadyAdded = employeeSkills.some(s => s.name.toLowerCase() === name.toLowerCase());
-              return (
-                <Button
-                  key={idx}
-                  size="small"
-                  disabled={isAlreadyAdded}
-                  onClick={async () => {
-                    if (!isAlreadyAdded) {
-                      const prof = (typeof ms === 'object' && ms.proficiency) ? ms.proficiency : 8;
-                      const updated = [...employeeSkills, { name, proficiency: prof }];
-                      await persist(updated, `Added "${name}" with proficiency ${prof}/10`);
-                    }
-                  }}
-                  sx={{
-                    fontWeight: 800,
-                    fontSize: '0.78rem',
-                    textTransform: 'none',
-                    borderRadius: 0,
-                    border: isAlreadyAdded ? '1px solid #ced4da' : '2px solid #000',
-                    bgcolor: isAlreadyAdded ? (theme.palette.mode === 'dark' ? '#334155' : '#e9ecef') : 'background.paper',
-                    color: isAlreadyAdded ? 'text.secondary' : 'text.primary',
-                    boxShadow: isAlreadyAdded ? 'none' : '2px 2px 0px #000',
-                    '&:hover': !isAlreadyAdded ? { bgcolor: '#FFD700', color: '#000', transform: 'translate(-1px,-1px)' } : {}
-                  }}
-                >
-                  {isAlreadyAdded ? `✓ ${name}` : `+ ${name}`}
-                </Button>
-              );
-            })}
-          </Box>
-        </Box>
-      )}
-
-      {/* Skills grid */}
+      {/* My skills first */}
       <Paper sx={{ p: 4, border: '3px solid #000', borderRadius: 0 }}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
           {employeeSkills.length === 0 ? (
@@ -351,6 +309,7 @@ const SkillsTab = () => {
                   <Tooltip title="Edit skill">
                     <IconButton
                       size="small"
+                      aria-label={`Edit ${skill.name}`}
                       onClick={() => handleOpenEdit(idx)}
                       sx={{
                         color: '#1971c2',
@@ -364,6 +323,7 @@ const SkillsTab = () => {
                   <Tooltip title="Remove skill">
                     <IconButton
                       size="small"
+                      aria-label={`Delete ${skill.name}`}
                       onClick={() => handleDeleteSkill(skill.name)}
                       sx={{
                         color: '#fa5252',
@@ -379,6 +339,48 @@ const SkillsTab = () => {
           )}
         </Box>
       </Paper>
+
+      {/* Company skills pool: below the person's own skills */}
+      {masterSkills && masterSkills.length > 0 && (
+        <Box sx={{ mt: 4, p: 3, border: '2px dashed #000', bgcolor: theme.palette.mode === 'dark' ? '#1e293b' : '#fff9db' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 900, textTransform: 'uppercase', color: '#f59f00', display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            Available Company Skills Pool (click to add with a default score of 8/10)
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {masterSkills.map((ms, idx) => {
+              const name = typeof ms === 'string' ? ms : ms.name;
+              const isAlreadyAdded = employeeSkills.some(s => s.name.toLowerCase() === name.toLowerCase());
+              return (
+                <Button
+                  key={idx}
+                  size="small"
+                  disabled={isAlreadyAdded}
+                  onClick={async () => {
+                    if (!isAlreadyAdded) {
+                      const prof = (typeof ms === 'object' && ms.proficiency) ? ms.proficiency : 8;
+                      const updated = [...employeeSkills, { name, proficiency: prof }];
+                      await persist(updated, `Added "${name}" with proficiency ${prof}/10`);
+                    }
+                  }}
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    textTransform: 'none',
+                    borderRadius: 0,
+                    border: isAlreadyAdded ? '1px solid #ced4da' : '2px solid #000',
+                    bgcolor: isAlreadyAdded ? (theme.palette.mode === 'dark' ? '#334155' : '#e9ecef') : 'background.paper',
+                    color: isAlreadyAdded ? 'text.secondary' : 'text.primary',
+                    boxShadow: isAlreadyAdded ? 'none' : '2px 2px 0px #000',
+                    '&:hover': !isAlreadyAdded ? { bgcolor: '#FFD700', color: '#000', transform: 'translate(-1px,-1px)' } : {}
+                  }}
+                >
+                  {isAlreadyAdded ? `✓ ${name}` : `+ ${name}`}
+                </Button>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
 
       {/* ── ADD SKILL DIALOG ── */}
       <Dialog

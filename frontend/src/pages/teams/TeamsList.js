@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+
 import { Link } from 'react-router-dom';
+
 import {
   Container,
   Typography,
@@ -8,7 +10,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Grid,
   Avatar,
   Chip,
   Divider,
@@ -24,22 +25,21 @@ import {
   Alert,
   Tabs,
   Tab,
-  Badge,
-  Button
+  Button,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
-  Person as PersonIcon,
-  Group as GroupIcon,
   Search as SearchIcon,
   Info as InfoIcon,
-  MoreVert as MoreVertIcon,
   Business as BusinessIcon,
-  Add as AddIcon
+  Add as AddIcon,
 } from '@mui/icons-material';
-import axios from '../../services/api';
 import aiService from '../../services/aiService';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 import { useTheme, alpha } from '@mui/material/styles';
+
 
 const TeamsList = () => {
   const theme = useTheme();
@@ -52,7 +52,7 @@ const TeamsList = () => {
   const [currentDepartment, setCurrentDepartment] = useState('All');
   const [teamStats, setTeamStats] = useState(null);
 
-  const isAdminOrManager = isAdmin() || isManager();
+  const isAdminOrManager = isAdmin();      // only administrators create teams
   
   // Fetch teams data
   useEffect(() => {
@@ -80,7 +80,7 @@ const TeamsList = () => {
                   id: team.id,
                   name: team.name,
                   department: dept.name,
-                  description: `Team from ${dept.name} department`,
+                  description: team.description || `${team.name} in the ${dept.name} department`,
                   leader: team.leader || {
                     id: 0,
                     name: 'Not Assigned',
@@ -89,8 +89,7 @@ const TeamsList = () => {
                   manager: team.manager,
                   members: members,
                   members_count: team.employee_count !== undefined ? team.employee_count : members.length,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
+                  created_at: team.created_at || null
                 });
               });
             }
@@ -167,7 +166,7 @@ const TeamsList = () => {
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h3" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: -1 }}>
+        <Typography variant="h4" component="h1">
           Teams Directory
         </Typography>
         {isAdminOrManager && (
@@ -189,7 +188,7 @@ const TeamsList = () => {
           <Grid container spacing={3}>
             <Grid item xs={12} sm={4}>
               <Box textAlign="center">
-                <Typography variant="h4" color="primary">
+                <Typography variant="h4" color="text.primary">
                   {teamStats.total_departments}
                 </Typography>
                 <Typography variant="subtitle1">
@@ -199,7 +198,7 @@ const TeamsList = () => {
             </Grid>
             <Grid item xs={12} sm={4}>
               <Box textAlign="center">
-                <Typography variant="h3" sx={{ fontWeight: 900, mb: 1, color: 'primary.main' }}>
+                <Typography variant="h3" sx={{ fontWeight: 900, mb: 1, color: 'text.primary' }}>
                   {teamStats.total_teams}
                 </Typography>
                 <Typography variant="subtitle1">
@@ -209,7 +208,7 @@ const TeamsList = () => {
             </Grid>
             <Grid item xs={12} sm={4}>
               <Box textAlign="center">
-                <Typography variant="h3" sx={{ fontWeight: 900, mb: 1, color: 'primary.main' }}>
+                <Typography variant="h3" sx={{ fontWeight: 900, mb: 1, color: 'text.primary' }}>
                   {teamStats.total_employees}
                 </Typography>
                 <Typography variant="subtitle1" sx={{ fontWeight: 800, textTransform: 'uppercase' }}>
@@ -272,7 +271,9 @@ const TeamsList = () => {
         </Alert>
       ) : filteredTeams.length === 0 ? (
         <Alert severity="info" sx={{ my: 4 }}>
-          No teams found matching your search criteria.
+          {teams.length === 0
+            ? 'There are no teams yet. Use "Create team" to set up the first one.'
+            : 'No teams match your search.'}
         </Alert>
       ) : (
         currentDepartment === 'All' ? (
@@ -324,7 +325,7 @@ const TeamCard = ({ team }) => {
           <Link to={`/teams/${team.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
             <Typography variant="h6" sx={{ 
               '&:hover': { 
-                color: 'primary.main',
+                color: 'text.primary',
                 textDecoration: 'underline'
               }
             }}>
@@ -342,7 +343,7 @@ const TeamCard = ({ team }) => {
                 border: '2px solid',
                 borderColor: 'primary.main',
                 bgcolor: alpha(theme.palette.primary.main, 0.1),
-                color: 'primary.main',
+                color: 'text.primary',
                 borderRadius: 0
               }} 
             />

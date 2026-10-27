@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+import axios from 'axios';
+
 import { useNavigate, useLocation } from 'react-router-dom';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 
 // Material UI components
 import {
@@ -12,13 +17,15 @@ import {
   Alert,
   CircularProgress,
   useTheme,
-  Grid,
-  alpha,
-  InputAdornment
+  InputAdornment,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+
 
 const Login = () => {
   const theme = useTheme();
@@ -26,6 +33,35 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [ssoProviders, setSsoProviders] = useState([]);
+  const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+  // Finish an SSO sign-in (token arrives in the URL fragment), report SSO errors, list configured providers
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const token = params.get('sso_token');
+    if (token) {
+      try {
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', params.get('sso_user') || '{}');
+      } catch (e) {
+        // storage unavailable
+      }
+      window.location.replace('/');
+      return;
+    }
+    const err = new URLSearchParams(window.location.search).get('sso_error');
+    if (err) {
+      const messages = {
+        no_account: 'No account matches that e-mail address. Ask an administrator to create one.',
+        cancelled: 'Sign-in was cancelled.',
+        email_not_verified: 'The provider did not return a verified e-mail address.',
+      };
+      setError(messages[err] || 'Single sign-on failed. Please try again or use your password.');
+    }
+    axios.get(`${apiBase}/api/auth/sso/providers/`).then((res) => setSsoProviders(res.data.providers || [])).catch(() => {});
+  }, [apiBase]);
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -46,8 +82,9 @@ const Login = () => {
       navigate(from, { replace: true });
     } catch (error) {
       setError(
-        error.response?.data?.message ||
-        'Failed to sign in. Please check your credentials.'
+        !error.response
+          ? 'Cannot reach the server. Check your connection and try again.'
+          : error.response.data?.message || 'Failed to sign in. Please check your credentials.'
       );
     } finally {
       setLoading(false);
@@ -168,7 +205,7 @@ const Login = () => {
                   ),
                   sx: { borderRadius: 0, border: brutalBorder, fontWeight: 700, '& fieldset': { border: 'none' } }
                 }}
-                InputLabelProps={{ sx: { fontWeight: 900, color: isDark ? '#fff' : '#000' } }}
+                InputLabelProps={{ shrink: true, sx: { position: 'static', transform: 'none', mb: 0.75, fontWeight: 900, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', color: isDark ? '#fff' : '#000', '&.Mui-focused': { color: isDark ? '#fff' : '#000' }, '& .MuiFormLabel-asterisk': { color: '#c92a2a' } } }}
               />
 
               <TextField
@@ -191,7 +228,7 @@ const Login = () => {
                   ),
                   sx: { borderRadius: 0, border: brutalBorder, fontWeight: 700, '& fieldset': { border: 'none' } }
                 }}
-                InputLabelProps={{ sx: { fontWeight: 900, color: isDark ? '#fff' : '#000' } }}
+                InputLabelProps={{ shrink: true, sx: { position: 'static', transform: 'none', mb: 0.75, fontWeight: 900, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', color: isDark ? '#fff' : '#000', '&.Mui-focused': { color: isDark ? '#fff' : '#000' }, '& .MuiFormLabel-asterisk': { color: '#c92a2a' } } }}
               />
 
               <Button
@@ -221,6 +258,18 @@ const Login = () => {
                 {loading ? <CircularProgress size={24} color="inherit" /> : 'ENTER SYSTEM'}
               </Button>
               
+              {ssoProviders.map((provider) => (
+                <Button
+                  key={provider.id}
+                  fullWidth
+                  variant="outlined"
+                  href={`${apiBase}/api/auth/sso/${provider.id}/login/`}
+                  sx={{ mb: 1.5, py: 1.4, fontWeight: 900, borderRadius: 0, border: brutalBorder, color: isDark ? '#fff' : '#000' }}
+                >
+                  Continue with {provider.name}
+                </Button>
+              ))}
+
               <Box sx={{ mt: 2, textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', opacity: 0.7 }}>
                   Forgot your credentials? Contact IT Support

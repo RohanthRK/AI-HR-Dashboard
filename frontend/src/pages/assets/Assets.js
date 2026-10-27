@@ -1,21 +1,49 @@
 import React, { useState, useEffect } from 'react';
+
 import {
-    Box, Typography, Paper, Button, TextField,
-    Table, TableBody, TableCell, TableContainer,
-    TableHead, TableRow, Chip, Dialog, DialogTitle,
-    DialogContent, DialogActions, FormControl,
-    InputLabel, Select, MenuItem, CircularProgress,
-    Autocomplete, Divider, IconButton, Tooltip
+  Box,
+  Typography,
+  Paper,
+  Button,
+  TextField,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  CircularProgress,
+  Autocomplete,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+
 import DeleteIcon from '@mui/icons-material/Delete';
+
 import ChatIcon from '@mui/icons-material/Chat';
+
 import HistoryIcon from '@mui/icons-material/History';
+
 import SendIcon from '@mui/icons-material/Send';
+
 import assetService from '../../services/assetService';
+
 import authService from '../../services/authService';
+
 import employeeService from '../../services/employeeService';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 
 const Assets = () => {
     const { currentUser } = useAuth();
@@ -159,7 +187,7 @@ const Assets = () => {
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
                 <Typography variant="h4" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
-                    Asset Management
+                    {isAdmin ? 'Asset Management' : 'My Assets'}
                 </Typography>
                 {isAdmin && (
                     <Button
@@ -214,7 +242,7 @@ const Assets = () => {
                                                 />
                                             </TableCell>
                                             <TableCell>
-                                                {asset.assignedTo || <Typography variant="caption" color="text.secondary">Unassigned</Typography>}
+                                                {asset.assignedTo ? (asset.assignedToName ? `${asset.assignedToName} (${asset.assignedToCode})` : asset.assignedTo) : <Typography variant="caption" color="text.secondary">Unassigned</Typography>}
                                             </TableCell>
                                             <TableCell sx={{ textAlign: 'center' }}>
                                                 <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>

@@ -1,17 +1,18 @@
-from django.shortcuts import render
 
 # Create your views here.
 
 """
 Views for employee management
 """
+import logging
 import json
 import os
+import re
+import uuid
 import datetime
-import traceback as import_traceback
 from bson import ObjectId
 from django.conf import settings
-from django.http import JsonResponse, HttpResponse, FileResponse
+from django.http import JsonResponse, FileResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
@@ -21,10 +22,98 @@ from utils.api_utils import (
     create_crud_endpoints,
     validate_required_fields
 )
-from utils.auth_utils import require_role, require_self_or_role
+from utils.auth_utils import require_role, require_self_or_role, is_privileged, is_admin, owns_employee, forbidden, redact_employee, can_see_employee
 
 # Define required fields for employee creation
 EMPLOYEE_REQUIRED_FIELDS = ['first_name', 'last_name', 'email', 'employee_id']
+PAN_RE = re.compile(r'^[A-Z]{5}[0-9]{4}[A-Z]$')
+
+# What an employee may change on their own profile. Everything else (pay, title, department, status, manager,
+# identifiers) is HR's: those keys are ignored when a non-administrator sends them.
+SELF_EDITABLE_FIELDS = {
+    'phone', 'address', 'gender', 'date_of_birth', 'marital_status', 'about_me', 'bio', 'love_about_job',
+    'interests_hobbies', 'skills', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone',
+    'emergency_contact_relationship', 'emergency_contact_email', 'personal_email', 'profile_image',
+}
+IMMUTABLE_FIELDS = {'_id', 'user_id', 'created_at'}
+EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def validate_employee_payload(data, exclude_id=None):
+    """Returns a 400/409 JsonResponse when the fields are unacceptable, otherwise None."""
+    def bad(message, status=400):
+        return JsonResponse({'error': 'Invalid request', 'message': message}, status=status)
+
+    for key in ('first_name', 'last_name'):
+        if key in data and not str(data[key] or '').strip():
+            return bad(f"{key.replace('_', ' ').capitalize()} cannot be empty")
+    if 'email' in data:
+        email = str(data['email'] or '').strip()
+        if not EMAIL_RE.match(email):
+            return bad('Enter a valid e-mail address')
+        data['email'] = email
+        clash = employees.find_one({'email': {'$regex': '^' + re.escape(email) + '$', '$options': 'i'}, '_id': {'$ne': exclude_id}})
+        if clash:
+            return bad('Another employee already uses this e-mail address', 409)
+    if 'employee_id' in data:
+        code = str(data['employee_id'] or '').strip()
+        if not code:
+            return bad('Employee ID cannot be empty')
+        data['employee_id'] = code
+        if employees.find_one({'employee_id': {'$regex': '^' + re.escape(code) + '$', '$options': 'i'}, '_id': {'$ne': exclude_id}}):
+            return bad('Another employee already uses this employee ID', 409)
+    if 'salary' in data and data['salary'] not in (None, ''):
+        try:
+            salary = float(data['salary'])
+        except (TypeError, ValueError):
+            return bad('Salary must be a number')
+        if not 0 <= salary <= 1_000_000_000:
+            return bad('Annual salary (CTC) must be between 0 and 100 crore rupees')
+        data['salary'] = salary
+    if data.get('tax_id'):
+        pan = str(data['tax_id']).strip().upper()
+        if not PAN_RE.match(pan):
+            return bad('PAN must look like ABCDE1234F')
+        data['tax_id'] = pan
+    if data.get('date_of_birth'):
+        try:
+            born = datetime.date.fromisoformat(str(data['date_of_birth'])[:10])
+        except ValueError:
+            return bad('Date of birth must be a valid date (YYYY-MM-DD)')
+        if not datetime.date(1940, 1, 1) <= born <= datetime.date.today() - datetime.timedelta(days=365 * 15):
+            return bad('Date of birth is not plausible for an employee')
+    if data.get('manager_id'):
+        boss = employees.find_one({'_id': ObjectId(str(data['manager_id']))}) if ObjectId.is_valid(str(data['manager_id'])) else None
+        if not boss:
+            return bad('The chosen manager does not exist')
+        if exclude_id is not None and str(boss['_id']) == str(exclude_id):
+            return bad('Someone cannot report to themself')
+    if data.get('hire_date'):
+        try:
+            hired = datetime.date.fromisoformat(str(data['hire_date'])[:10])
+        except ValueError:
+            return bad('Hire date must be a valid date (YYYY-MM-DD)')
+        if hired > datetime.date.today() + datetime.timedelta(days=366):
+            return bad('Hire date is too far in the future')
+    return None
+
+
+def _next_employee_code():
+    """EMP-<n+1> where n is the highest number used by an existing EMP-<number> code."""
+    highest = 0
+    for doc in employees.find({'employee_id': {'$regex': r'^EMP-\d+$'}}, {'employee_id': 1}):
+        highest = max(highest, int(doc['employee_id'].split('-')[1]))
+    return f'EMP-{highest + 1}'
+
+
+def _target_doc(employee_id):
+    doc = None
+    if len(str(employee_id)) == 24:
+        try:
+            doc = employees.find_one({'_id': ObjectId(employee_id)})
+        except Exception:
+            doc = None
+    return doc or employees.find_one({'employee_id': employee_id})
 
 # Define searchable fields for employees
 EMPLOYEE_search_fields = ['first_name', 'last_name', 'email', 'employee_id', 'position', 'phone']
@@ -64,14 +153,9 @@ def list_employees(request):
         }
     
     Notes:
-        - If no employees exist, creates sample employee data
         - Automatically adds department names based on department_id
     """
     try:
-        print("DEBUG: Received list_employees request")
-        print(f"DEBUG: User agent: {request.META.get('HTTP_USER_AGENT', 'Not provided')}")
-        print(f"DEBUG: Remote addr: {request.META.get('REMOTE_ADDR', 'Not provided')}")
-        print(f"DEBUG: Headers: {dict(request.headers)}")
 
         # Build query filter from request parameters
         query_filter = {}
@@ -81,28 +165,24 @@ def list_employees(request):
         if search and EMPLOYEE_search_fields:
             search_conditions = []
             for field in EMPLOYEE_search_fields:
-                search_conditions.append({field: {'$regex': search, '$options': 'i'}})
+                search_conditions.append({field: {'$regex': re.escape(search[:60]), '$options': 'i'}})
             query_filter['$or'] = search_conditions
             
-        # Add any exact match filters - exclude pagination, cache-busting, and other non-filter params
-        excluded_params = ['page', 'limit', 'search', 'sort', 'order', '_t', 'cache']
-        for key, value in request.GET.items():
-            if key not in excluded_params:
-                if key.endswith('_id') and value:
-                    try:
-                        # Convert to ObjectId if it's an ID field
-                        query_filter[key] = ObjectId(value)
-                    except:
-                        query_filter[key] = value
-                elif value:
-                    query_filter[key] = value
+        # Only these fields can be filtered on (never pay, bank or personal fields, which would let anyone probe them)
+        for key in ('department', 'department_id', 'team', 'team_id', 'position', 'manager_id', 'employment_type', 'employee_id'):
+            value = request.GET.get(key)
+            if value:
+                query_filter[key] = value
+        if request.GET.get('status'):
+            query_filter['employment_status'] = request.GET['status']
+        elif request.GET.get('employment_status'):
+            query_filter['employment_status'] = request.GET['employment_status']
         
         # Get sort parameters
-        sort_field = request.GET.get('sort', '_id')
+        sort_field = request.GET.get('sort', '_id') if request.GET.get('sort') in ('_id', 'first_name', 'last_name', 'hire_date', 'department', 'position', 'employee_id') else '_id'
         sort_order = 1 if request.GET.get('order', 'asc') == 'asc' else -1
         
         # Execute query
-        print(f"DEBUG: MongoDB query filter: {query_filter}")
         cursor = employees.find(query_filter).sort(sort_field, sort_order)
         
         # Get all department data to add names
@@ -117,85 +197,9 @@ def list_employees(request):
         
         # Count total documents (before pagination)
         total_count = employees.count_documents(query_filter)
-        print(f"DEBUG: Found {total_count} total employees matching query")
-        
-        # If no employees found, create sample employees
-        if total_count == 0:
-            print("DEBUG: No employees found. Creating sample data...")
-            
-            # Create sample departments if they don't exist
-            dept_ids = {}
-            for dept_name in ["Engineering", "HR", "Marketing", "Sales", "Finance"]:
-                existing_dept = departments.find_one({"name": dept_name})
-                if existing_dept:
-                    dept_ids[dept_name] = existing_dept["_id"]
-                else:
-                    result = departments.insert_one({
-                        "name": dept_name,
-                        "description": f"{dept_name} department",
-                        "created_at": datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
-                    })
-                    dept_ids[dept_name] = result.inserted_id
-            
-            # Sample employee data
-            sample_employees = [
-                {
-                    "first_name": "John",
-                    "last_name": "Doe",
-                    "email": "john.doe@example.com",
-                    "employee_id": "EMP001",
-                    "department": "Engineering",
-                    "department_id": dept_ids["Engineering"],
-                    "position": "Senior Developer",
-                    "hire_date": "2021-01-15",
-                    "phone": "+1 555-123-4567",
-                    "address": "123 Main St, Anytown USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Jane",
-                    "last_name": "Smith",
-                    "email": "jane.smith@example.com",
-                    "employee_id": "EMP002",
-                    "department": "HR",
-                    "department_id": dept_ids["HR"],
-                    "position": "HR Manager",
-                    "hire_date": "2020-05-10",
-                    "phone": "+1 555-987-6543",
-                    "address": "456 Oak Ave, Othertown USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Michael",
-                    "last_name": "Johnson",
-                    "email": "michael.johnson@example.com",
-                    "employee_id": "EMP003",
-                    "department": "Sales",
-                    "department_id": dept_ids["Sales"],
-                    "position": "Sales Representative",
-                    "hire_date": "2022-03-22",
-                    "phone": "+1 555-456-7890",
-                    "address": "789 Pine St, Sometown USA",
-                    "employment_status": "Active"
-                }
-            ]
-            
-            # Add timestamps to all sample employees
-            for emp in sample_employees:
-                emp["created_at"] = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
-            
-            # Insert sample employees
-            employees.insert_many(sample_employees)
-            print(f"DEBUG: Created {len(sample_employees)} sample employees")
-            
-            # Requery to get the newly created employees
-            cursor = employees.find(query_filter).sort(sort_field, sort_order)
-            total_count = employees.count_documents(query_filter)
-            print(f"DEBUG: Now found {total_count} total employees after creating samples")
         
         # Apply pagination
         results = list(cursor.skip(skip).limit(limit))
-        print(f"DEBUG: Returning {len(results)} employees for page {page}")
         
         # Enhance employee data with department names and ensure consistent status field
         for employee in results:
@@ -225,7 +229,7 @@ def list_employees(request):
                     pass
         
         # Serialize results
-        serialized_results = [serialize_document(doc) for doc in results]
+        serialized_results = [redact_employee(request, serialize_document(doc)) for doc in results]
         
         # Calculate pagination metadata
         total_pages = (total_count + limit - 1) // limit  # Ceiling division
@@ -245,27 +249,17 @@ def list_employees(request):
         
         # Create response with CORS headers
         response = JsonResponse(response_data)
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         
-        print("DEBUG: Returning successful response")
         return response
             
     except Exception as e:
-        print(f"âŒ ERROR in list_employees: {str(e)}")
-        print(f"âŒ Traceback: {import_traceback.format_exc()}")
         
         # Create error response with CORS headers
         response = JsonResponse({
             'error': 'Server error during employee list fetch',
-            'message': str(e),
-            'traceback': import_traceback.format_exc()
+            'message': str(e)
         }, status=500)
         
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         
         return response
 
@@ -370,10 +364,9 @@ def get_employee(request, employee_id):
         except:
             pass
             
-        return JsonResponse(response_data)
+        return JsonResponse(redact_employee(request, response_data))
         
     except Exception as e:
-        print(f"ERROR in get_employee view: {str(e)}")
         return JsonResponse({
             'error': 'Server error',
             'message': str(e)
@@ -381,7 +374,7 @@ def get_employee(request, employee_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@require_role(['Admin', 'Manager'])
+@require_role(['Admin'])
 def create_employee(request):
     """
     Creates a new employee record.
@@ -421,23 +414,26 @@ def create_employee(request):
         - Ensures status/employment_status field consistency
     """
     try:
-        print(f"ðŸ” BACKEND: Received employee creation request")
         # Parse JSON data
         try:
             data = json.loads(request.body)
-            print(f"ðŸ” BACKEND: Parsed employee data: {data}")
         except json.JSONDecodeError:
-            print(f"âŒ BACKEND: Invalid JSON data in request")
             return JsonResponse({
                 'error': 'Invalid request',
                 'message': 'Invalid JSON data'
             }, status=400)
         
-        # Validate required fields
+        # the employee ID is optional: HR gets the next free number when it is left blank
+        if not str(data.get('employee_id') or '').strip():
+            data['employee_id'] = _next_employee_code()
         is_valid, error_response = validate_required_fields(data, EMPLOYEE_REQUIRED_FIELDS)
         if not is_valid:
-            print(f"âŒ BACKEND: Missing required fields")
             return error_response
+        invalid = validate_employee_payload(data)
+        if invalid:
+            return invalid
+        for key in IMMUTABLE_FIELDS - {'created_at'}:
+            data.pop(key, None)
             
         # Ensure status/employment_status field consistency
         if 'status' in data and 'employment_status' not in data:
@@ -457,30 +453,32 @@ def create_employee(request):
         result = employees.insert_one(data)
         inserted_id = str(result.inserted_id)
 
-        # --- SYNC WITH TEAMS ---
-        team_id = data.get('team_id')
-        team_name = data.get('team')
-        if team_id or team_name:
+        # --- SYNC WITH TEAMS (members, member cards and the person's own team fields all stay in step) ---
+        team_ref = data.get('team_id') or data.get('team')
+        if team_ref:
             try:
+                from teams.views import _apply_members
                 from bson import ObjectId as OId
-                t_query = {'_id': OId(str(team_id))} if team_id else {'name': team_name}
-                team_doc = teams_collection.find_one(t_query)
+                team_doc = teams_collection.find_one({'_id': OId(str(data['team_id']))}) if data.get('team_id') else teams_collection.find_one({'name': data.get('team')})
                 if team_doc:
-                    new_member = {
-                        'id': inserted_id,
-                        'name': f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or "Employee",
-                        'position': data.get('position', 'Employee'),
-                        'is_leader': False,
-                        'is_manager': False
-                    }
-                    teams_collection.update_one(
-                        {'_id': team_doc['_id']},
-                        {'$push': {'employees': new_member}}
-                    )
+                    ids = [str(m) for m in team_doc.get('members', [])] + [inserted_id]
+                    cards = _apply_members(team_doc['_id'], team_doc['name'], team_doc.get('department', ''), ids,
+                                           team_doc.get('leader_id'), team_doc.get('manager_id'))
+                    teams_collection.update_one({'_id': team_doc['_id']}, {'$set': {'employees': cards, 'members': [c['id'] for c in cards]}})
             except Exception as e:
-                print(f'Sync error: {e}')
+                logging.getLogger(__name__).warning('Ignored error in %s: %s', __name__, e)
 
         new_employee = employees.find_one({'_id': result.inserted_id})
+        try:
+            from onboarding.views import start_onboarding
+            from utils.events import emit
+            if new_employee:
+                start_onboarding(new_employee)
+                emit('employee.created', {'employee_id': new_employee.get('employee_id'), 'id': inserted_id,
+                                          'name': f"{new_employee.get('first_name', '')} {new_employee.get('last_name', '')}".strip(),
+                                          'email': new_employee.get('email')})
+        except Exception as e:
+            logging.getLogger(__name__).warning('Ignored error in %s: %s', __name__, e)
         if new_employee:
             return JsonResponse({
                 'message': 'Employee created successfully',
@@ -491,12 +489,11 @@ def create_employee(request):
         return JsonResponse({'message': 'Employee created successfully', 'id': inserted_id}, status=201)
 
     except Exception as e:
-        import traceback
-        return JsonResponse({'error': 'Server error', 'message': str(e), 'traceback': traceback.format_exc()}, status=500)
+        return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["PUT"])
-@require_self_or_role(['Admin', 'Manager'])
+@require_role(['Admin'])
 def update_employee(request, employee_id):
     """
     Updates an employee record (full update).
@@ -524,11 +521,22 @@ def update_employee(request, employee_id):
         - Requires all fields to be provided (full replacement)
         - Updates 'updated_at' timestamp automatically
     """
+    try:
+        data = json.loads(request.body)
+    except ValueError:
+        return JsonResponse({'error': 'Invalid request', 'message': 'Invalid JSON data'}, status=400)
+    target = _target_doc(employee_id)
+    invalid = validate_employee_payload(data, exclude_id=target['_id'] if target else None)
+    if invalid:
+        return invalid
+    for key in IMMUTABLE_FIELDS:
+        data.pop(key, None)
+    request._body = json.dumps(data).encode()
     return employee_crud['update_item'](request, employee_id)
 
 @csrf_exempt
 @require_http_methods(["PATCH"])
-@require_self_or_role(['Admin', 'Manager'])
+@require_self_or_role(['Admin'])
 def partial_update_employee(request, employee_id):
     """
     Updates an employee record (partial update).
@@ -539,7 +547,15 @@ def partial_update_employee(request, employee_id):
         data = json.loads(request.body)
         user_role = (getattr(request, 'role', '') or '').strip().lower()
         is_admin = user_role in ['admin', 'administrator']
-        is_admin_or_hr = user_role in ['admin', 'hr', 'administrator', 'manager']
+        target = _target_doc(employee_id)
+        if not is_admin:
+            data = {k: v for k, v in data.items() if k in SELF_EDITABLE_FIELDS}      # everything else is HR's
+        invalid = validate_employee_payload(data, exclude_id=target['_id'] if target else None)
+        if invalid:
+            return invalid
+        for key in IMMUTABLE_FIELDS:
+            data.pop(key, None)
+        request._body = json.dumps(data).encode()
         
         # 1. DEFINE RESTRICTED FIELDS (Only Admin can change role_id or employee_id)
         RESTRICTED_FIELDS = ['role_id', 'employee_id']
@@ -583,7 +599,7 @@ def partial_update_employee(request, employee_id):
                             {'$set': {'role_id': data['role_id']}}
                         )
             except Exception as e:
-                print(f"ERROR updating role: {str(e)}")
+                logging.getLogger(__name__).warning('Ignored error in %s: %s', __name__, e)
                 
     except Exception:
         pass
@@ -616,6 +632,10 @@ def delete_employee(request, employee_id):
         - Associated documents are not automatically deleted
     """
     return employee_crud['delete_item'](request, employee_id)
+
+ALLOWED_DOCUMENT_EXTENSIONS = {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt', '.png', '.jpg', '.jpeg'}
+MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -651,6 +671,8 @@ def upload_document(request, employee_id):
         - Files are stored in: {MEDIA_ROOT}/documents/{employee_id}/
         - Document metadata is stored in the documents collection
     """
+    if not (owns_employee(request, employee_id) or (is_privileged(request) and can_see_employee(request, employee_id))):
+        return forbidden()
     try:
         # Check if employee exists
         employee = employees.find_one({'_id': ObjectId(employee_id)})
@@ -668,19 +690,35 @@ def upload_document(request, employee_id):
                 'message': 'No file was uploaded'
             }, status=400)
             
+        # Only accept sensible document types and sizes
+        extension = os.path.splitext(uploaded_file.name)[1].lower()
+        if extension not in ALLOWED_DOCUMENT_EXTENSIONS:
+            return JsonResponse({
+                'error': 'Unsupported file type',
+                'message': f"Allowed types: {', '.join(sorted(ALLOWED_DOCUMENT_EXTENSIONS))}"
+            }, status=400)
+        if uploaded_file.size > MAX_DOCUMENT_BYTES:
+            return JsonResponse({
+                'error': 'File too large',
+                'message': f'Documents can be at most {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB'
+            }, status=413)
+
         # Get document metadata
         doc_name = request.POST.get('name', uploaded_file.name)
         doc_description = request.POST.get('description', '')
         doc_category = request.POST.get('category', 'general')
         is_confidential = request.POST.get('is_confidential', 'false').lower() == 'true'
         tags = request.POST.get('tags', '').split(',') if request.POST.get('tags') else []
+        expires_on = (request.POST.get('expires_on') or '').strip()
         
         # Create documents directory if it doesn't exist
         documents_dir = os.path.join(settings.MEDIA_ROOT, 'documents', employee_id)
         os.makedirs(documents_dir, exist_ok=True)
         
         # Save file
-        file_path = os.path.join(documents_dir, uploaded_file.name)
+        # unique stored name: never overwrite an earlier upload with the same file name
+        stored_name = f"{uuid.uuid4().hex[:8]}_{os.path.basename(uploaded_file.name)}"
+        file_path = os.path.join(documents_dir, stored_name)
         with open(file_path, 'wb+') as destination:
             for chunk in uploaded_file.chunks():
                 destination.write(chunk)
@@ -697,7 +735,8 @@ def upload_document(request, employee_id):
             'uploaded_by': request.session.get('user_id', None),  # Use session user ID if available
             'is_confidential': is_confidential,
             'tags': tags,
-            'category': doc_category
+            'category': doc_category,
+            'expires_on': expires_on,
         }
         
         # Insert document record
@@ -751,6 +790,8 @@ def list_documents(request, employee_id):
         - 404: Employee not found
         - 500: Server error
     """
+    if not (owns_employee(request, employee_id) or (is_privileged(request) and can_see_employee(request, employee_id))):
+        return forbidden()
     try:
         # Check if employee exists
         employee = employees.find_one({'_id': ObjectId(employee_id)})
@@ -808,6 +849,8 @@ def download_document(request, employee_id, document_id):
         - Returns the file content directly with the appropriate MIME type
         - Content-Disposition header is set for browser download
     """
+    if not (owns_employee(request, employee_id) or (is_privileged(request) and can_see_employee(request, employee_id))):
+        return forbidden()
     try:
         # Check if document exists
         document = documents.find_one({
@@ -868,6 +911,8 @@ def delete_document(request, employee_id, document_id):
     Notes:
         - Deletes both the document file from the filesystem and the metadata record
     """
+    if not is_admin(request):
+        return forbidden('Only HR / administrators can delete documents.')
     try:
         # Check if document exists
         document = documents.find_one({
@@ -972,7 +1017,7 @@ def get_department(request, department_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-@require_role(['Admin', 'Manager'])
+@require_role(['Admin'])
 def create_department(request):
     """
     Creates a new department.
@@ -1005,7 +1050,7 @@ def create_department(request):
 
 @csrf_exempt
 @require_http_methods(["PUT"])
-@require_role(['Admin', 'Manager'])
+@require_role(['Admin'])
 def update_department(request, department_id):
     """
     Updates a department (full update).
@@ -1033,7 +1078,7 @@ def update_department(request, department_id):
 
 @csrf_exempt
 @require_http_methods(["PATCH"])
-@require_role(['Admin', 'Manager'])
+@require_role(['Admin'])
 def partial_update_department(request, department_id):
     """
     Updates a department (partial update).
@@ -1170,178 +1215,26 @@ def debug_employees(request):
     Notes:
         - This is a diagnostic endpoint intended for troubleshooting only
         - Returns all employee records without pagination
-        - If no employees exist, creates sample employee data
         - Includes detailed debug logging
     """
+    if (getattr(request, 'role', '') or '') not in ('Admin', 'Manager', 'HR'):
+        return JsonResponse({'error': 'Forbidden', 'message': 'Admin or Manager role required.'}, status=403)
     try:
         # Additional debug info
-        print("DEBUG: Received debug endpoint request")
-        print(f"DEBUG: User agent: {request.META.get('HTTP_USER_AGENT', 'Not provided')}")
-        print(f"DEBUG: Remote addr: {request.META.get('REMOTE_ADDR', 'Not provided')}")
-        print(f"DEBUG: Headers: {dict(request.headers)}")
         
         # Get parameters for detailed debugging
         direct_access = request.GET.get('direct_access', 'false').lower() == 'true'
-        print(f"DEBUG: direct_access={direct_access}")
         
         # Get all employees with no filters and no pagination
-        print("DEBUG: Querying MongoDB for all employees")
         all_employees = list(employees.find())
         
         # Log count for debugging
         count = len(all_employees)
-        print(f"DEBUG: Found {count} employees in database")
-        
-        # Inspect a sample employee for field verification
-        if count > 0:
-            sample = all_employees[0]
-            print(f"DEBUG: Sample employee fields: {list(sample.keys())}")
-            print(f"DEBUG: Sample employee status: {sample.get('employment_status', 'Not found')} and department_id: {sample.get('department_id', 'Not found')}")
-        
-        # If no employees found, create sample data
-        if count == 0:
-            print("No employees found, creating sample data...")
-            
-            # Create sample departments if they don't exist
-            dept_ids = {}
-            for dept_name in ["Engineering", "HR", "Marketing", "Sales", "Finance"]:
-                existing_dept = departments.find_one({"name": dept_name})
-                if existing_dept:
-                    dept_ids[dept_name] = str(existing_dept["_id"])
-                else:
-                    result = departments.insert_one({
-                        "name": dept_name,
-                        "description": f"{dept_name} department",
-                        "created_at": datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
-                    })
-                    dept_ids[dept_name] = str(result.inserted_id)
-            
-            # Sample employee data
-            sample_employees = [
-                {
-                    "first_name": "John",
-                    "last_name": "Doe",
-                    "email": "john.doe@example.com",
-                    "employee_id": "EMP001",
-                    "department": "Engineering",
-                    "department_id": dept_ids["Engineering"],
-                    "position": "Senior Developer",
-                    "hire_date": "2021-01-15",
-                    "phone": "+1 555-123-4567",
-                    "address": "123 Main St, Anytown USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Jane",
-                    "last_name": "Smith",
-                    "email": "jane.smith@example.com",
-                    "employee_id": "EMP002",
-                    "department": "HR",
-                    "department_id": dept_ids["HR"],
-                    "position": "HR Manager",
-                    "hire_date": "2020-05-10",
-                    "phone": "+1 555-987-6543",
-                    "address": "456 Oak Ave, Othertown USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Michael",
-                    "last_name": "Johnson",
-                    "email": "michael.johnson@example.com",
-                    "employee_id": "EMP003",
-                    "department": "Sales",
-                    "department_id": dept_ids["Sales"],
-                    "position": "Sales Representative",
-                    "hire_date": "2022-03-22",
-                    "phone": "+1 555-456-7890",
-                    "address": "789 Pine St, Sometown USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Emily",
-                    "last_name": "Brown",
-                    "email": "emily.brown@example.com",
-                    "employee_id": "EMP004",
-                    "department": "Marketing",
-                    "department_id": dept_ids["Marketing"],
-                    "position": "Marketing Coordinator",
-                    "hire_date": "2021-11-08",
-                    "phone": "+1 555-789-0123",
-                    "address": "321 Elm St, Anycity USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Robert",
-                    "last_name": "Williams",
-                    "email": "robert.williams@example.com",
-                    "employee_id": "EMP005",
-                    "department": "Finance",
-                    "department_id": dept_ids["Finance"],
-                    "position": "Financial Analyst",
-                    "hire_date": "2020-09-15",
-                    "phone": "+1 555-234-5678",
-                    "address": "654 Maple Rd, Somewhere USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Sarah",
-                    "last_name": "Miller",
-                    "email": "sarah.miller@example.com",
-                    "employee_id": "EMP006",
-                    "department": "Engineering",
-                    "department_id": dept_ids["Engineering"],
-                    "position": "QA Engineer",
-                    "hire_date": "2022-01-20",
-                    "phone": "+1 555-345-6789",
-                    "address": "987 Cedar Ln, Elsewhere USA",
-                    "employment_status": "On Leave"
-                },
-                {
-                    "first_name": "David",
-                    "last_name": "Jones",
-                    "email": "david.jones@example.com",
-                    "employee_id": "EMP007",
-                    "department": "Sales",
-                    "department_id": dept_ids["Sales"],
-                    "position": "Sales Manager",
-                    "hire_date": "2019-07-12",
-                    "phone": "+1 555-567-8901",
-                    "address": "159 Walnut Ave, Anyplace USA",
-                    "employment_status": "Active"
-                },
-                {
-                    "first_name": "Jennifer",
-                    "last_name": "Davis",
-                    "email": "jennifer.davis@example.com",
-                    "employee_id": "EMP008",
-                    "department": "HR",
-                    "department_id": dept_ids["HR"],
-                    "position": "Recruiter",
-                    "hire_date": "2021-06-30",
-                    "phone": "+1 555-678-9012",
-                    "address": "753 Birch Blvd, Somewhere USA",
-                    "employment_status": "Active"
-                }
-            ]
-            
-            # Add timestamps to all sample employees
-            for emp in sample_employees:
-                emp["created_at"] = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
-            
-            # Insert sample employees
-            employees.insert_many(sample_employees)
-            
-            # Get the newly created employees
-            all_employees = list(employees.find())
-            count = len(all_employees)
-            print(f"Created {count} sample employees")
         
         # Serialize results
-        print("DEBUG: Serializing employee data")
         serialized_results = [serialize_document(doc) for doc in all_employees]
         
         # Return all employees without pagination
-        print(f"DEBUG: Returning {len(serialized_results)} employees in the response")
         response_data = {
             'count': count,
             'employees': serialized_results,
@@ -1349,33 +1242,22 @@ def debug_employees(request):
                 'timestamp': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
                 'direct_access': direct_access,
                 'departments_count': departments.count_documents({}),
-                'request_headers': dict(request.headers)
             }
         }
         
         # Create response with CORS headers
         response = JsonResponse(response_data)
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         
-        print("DEBUG: Returning successful debug response")
         return response
             
     except Exception as e:
-        print(f"âŒ ERROR in debug_employees: {str(e)}")
-        print(f"âŒ Traceback: {import_traceback.format_exc()}")
         
         # Create error response with CORS headers
         response = JsonResponse({
             'error': 'Server error during employee debug fetch',
-            'message': str(e),
-            'traceback': import_traceback.format_exc()
+            'message': str(e)
         }, status=500)
         
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         
         return response
 
@@ -1484,9 +1366,6 @@ def list_departments_mongodb(request):
         
         # Create response with CORS headers
         response = JsonResponse(response_data)
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         
         return response
             
@@ -1497,8 +1376,5 @@ def list_departments_mongodb(request):
             'message': str(e)
         }, status=500)
         
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         
         return response

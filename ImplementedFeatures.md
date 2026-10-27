@@ -1,170 +1,101 @@
 # Implemented Features Tracker
 
-This file tracks the implementation status of all core and AI features across the AI-HR-Dashboard.
+Status of every feature, based on what the code does (sixth pass, October 2026). Items marked **[x]** are covered by the backend test-suite (`python run_tests.py`, 77 tests), the frontend unit tests (26, Vitest) and/or the browser flows and route sweep in `e2e/` against a scratch database.
+
+Legend: **[x]** working · **[~]** works with a caveat · **[ ]** not built
 
 ---
 
-## Core HR Modules
+## Core HR
 
-### Authentication & Authorization
-- [x] JWT-based login with username/password
-- [x] Role-based access control (Admin, Manager, Employee)
-- [x] Custom JWT middleware for protected routes
-- [x] User registration / account provisioning
-- [x] Profile update & password change
-- [x] Dual-mode employee onboarding form (Full Onboarding + Link Existing Employee)
-- [x] Auto-generated employee IDs, usernames, and passwords with copy support
+### Authentication & access control
+- [x] JWT login (2-hour tokens), automatic token refresh in the SPA (`POST /api/auth/refresh/`), redirect to login on 401
+- [x] Login throttling: 5 failed attempts per user+IP → 15-minute lockout (HTTP 429)
+- [x] Roles Admin / Manager / Employee (`HR` is honoured where checked); JWT middleware protects every route except `auth/login` and `health`
+- [x] **Single sign-on** with Google and Microsoft (OIDC authorization-code flow, signed state, existing accounts only, matched by verified e-mail)
+- [x] Own profile and password change (`/api/auth/profile/`, `/api/auth/change-password/`)
+- [x] User provisioning (Signup, Admin), user/role admin
+- [x] Server-side role/ownership checks on: attendance admin, employee documents, employee pay/personal data (redacted for colleagues), leave balance, leave self-approval blocked, expenses, assets, PIPs, objectives, skills, review detail, helpdesk, recruitment, payroll, teams/projects, people analytics, resume screening
 
-### Employee Management
-- [x] Full CRUD for employee profiles
-- [x] Employee directory with search, filter, and pagination
-- [x] Employee profile page with skills, education, certifications
-- [x] Employee skills management (add/remove skills)
-- [x] Document upload and download per employee
-- [x] Department management (CRUD)
-- [x] Employee–User account linking
-- [x] Profile editing modal with real-time updates
+### Employees, teams, documents
+- [x] Employee CRUD, directory, profile with **Performance / Leaves / Documents tabs on live data**
+- [x] Departments CRUD, teams with managers and members
+- [x] Documents: upload (with optional expiry date), download, delete — owner or Admin/Manager/HR only
+- [x] Creating an employee resolves real department/team ids
 
-### Team Management
-- [x] Create, edit, and delete teams
-- [x] Assign manager/team lead per team
-- [x] Team member management (add/remove members)
-- [x] Team detail view with member cards
-- [x] Teams list with department grouping
+### Attendance, leave, payroll
+- [x] **Attendance calendar and hours** (one-screen month view; expected hours per day, company default or per person; short / late / absent / no-clock-out flags; HR sees everyone with search, filters, periods and CSV; managers see their team)
+- [x] Clock in/out, calendar, daily attendance (`/attendance/daily/`), summary, reports
+- [x] Leave requests (incl. half-day), approve/reject/cancel, balances for earned (18 days), sick (10 days) and unlimited unpaid leave, notifications
+- [x] Payroll (India): annual CTC → Basic/HRA/special allowance, PF, ESI, professional tax and TDS (new regime), loss of pay, mid-month joiners, one-off adjustments, salary revisions with history, Draft → Released → Paid pay run with pre-release checks, bank transfer file, payroll register, PF/ESI/TDS summary, payslip on screen and PDF in rupees
+- [x] Payroll rates (basic %, HRA %, PF %, wage ceiling, ESI threshold, professional tax, TDS switch) and overtime pay (hours beyond 8/day × multiplier) are configurable in Settings
+- [x] Bank details and recurring per-employee benefits/deductions (profile → PAY tab); payslips and PDFs include them
 
-### Attendance & Time Tracking
-- [x] Clock-in / Clock-out with timestamps
-- [x] Daily attendance records with status (Present, Absent, Late, WFH, Half-Day)
-- [x] Attendance calendar view with color-coded days
-- [x] Hours worked calculation
-- [x] Admin view of all employee attendance records
+### Performance
+- [x] Reviews, OKRs, PIPs, skills, review generator (see AI)
 
-### Leave Management
-- [x] Employee leave request submission (Earned Leaves, LOP)
-- [x] Half-day leave support
-- [x] Leave approval / rejection by Manager or Admin
-- [x] Leave balance calculation (entitlement, used, pending, remaining)
-- [x] Leave cancellation
-- [x] Manager pending approvals queue
-- [x] Robust employee ID resolution (by ObjectId, business code, email)
+### Expenses · Assets · Helpdesk
+- [x] Expenses (claims always start Pending; decisions notify the employee), assets, helpdesk (owner/staff rules, status notifications)
 
-### Payroll
-- [x] Monthly payroll records per employee
-- [x] Salary breakdown (base, allowances, deductions, net pay)
-- [x] Payslip PDF generation
-- [x] Bulk payroll CSV export
-- [x] Admin payroll management view
+### Notifications · Settings
+- [x] Live notifications (leave, expense, ticket, training, compliance, onboarding, offboarding) with admin-controlled toggles
+- [x] Optional delivery by e-mail (SMTP) and Slack/Teams webhook (`EMAIL_*`, `NOTIFY_WEBHOOK_URL`; switched on in Settings; failures never break the app)
+- [x] Organisation settings, payroll rates, notification toggles, company FAQ and required-document list stored in MongoDB (Admin edits)
 
-### Performance & Reviews
-- [x] Performance review scheduling (ReviewPeriods)
-- [x] Manager-submitted performance reviews
-- [x] My Reviews page (employee self-view)
-- [x] Team performance review workflow
-- [x] OKR (Objectives & Key Results) tab – create, track, and update OKRs
-- [x] PIP (Performance Improvement Plans) tab – create and manage PIPs
-- [x] Skills tab within performance view
-- [x] My Performance Reports page
-
-### Objectives (OKR)
-- [x] Create and manage personal and team objectives
-- [x] Key result tracking with progress bars
-- [x] Status updates (On Track, At Risk, Behind, Completed)
-
-### Expenses
-- [x] Employee expense submission
-- [x] Expense approval / rejection workflow
-- [x] Expense listing with filtering
-
-### Assets
-- [x] Company asset tracking
-- [x] Asset assignment to employees
-- [x] Asset listing and detail view
-
-### Helpdesk / Support Tickets
-- [x] Employee ticket submission
-- [x] Ticket status tracking (Open, In Progress, Resolved)
-- [x] HR/Admin ticket management view
-
-### Notifications
-- [x] In-app notification system
-- [x] Bell icon badge with unread count
-- [x] Leave update notifications
-- [x] Notifications panel with mark-as-read
-
-### Dashboard
-- [x] Employee headcount widget
-- [x] Pending leave approvals widget
-- [x] Recent attendance summary
-- [x] Quick-stats overview cards
-- [x] Interactive charts (Recharts)
-
-### Advanced Analytics
-- [x] Department headcount charts
-- [x] Attendance rate over time
-- [x] Leave utilization analysis
-- [x] Payroll trends
-- [x] Custom analytics filters by department and date range
+### Operations & security hardening
+- [x] First-admin bootstrap (`create_admin.py`), JSON backup/restore (`backup.py`), Docker files and `docker-compose.yml` (unverified build), CI
+- [x] Salted password hashes everywhere (the admin password-reset previously stored an unsalted SHA-256), minimum password length, production refuses a short `SECRET_KEY`
+- [x] Document uploads: allow-list of types, 10 MB limit, unique stored names; demo seed refuses to run in production
+- [x] Frontend moved from Create React App to **Vite** (build ≈ 12 s, tests ≈ 7 s), code-split routes (main bundle 602 kB → 280 kB gzipped), `npm audit` and `pip-audit` both clean and run in CI
+- [x] Layout fix: MUI v7 silently ignored the old `Grid` `xs`/`md` props in 40 files; they now use `GridLegacy`, so pages lay out as designed
+- [x] `PyPDF2` replaced by the maintained `pypdf`; PDF and DOCX resume parsing covered by a test
 
 ---
 
-## AI & Intelligent Features
+## People programmes
 
-### 1) Recruitment
-- [x] **AI Resume Screening** – Gemini API parses uploaded resumes and scores candidates against job requirements; async via Celery
-- [x] **Recruitment Pipeline UI** – Kanban-style candidate status board (Applied → Screening → Interview → Offer → Hired)
-- [ ] AI-based job description generation
-- [ ] Predict which candidates are likely to succeed
-
-### 2) Onboarding
-- [ ] Automate document verification
-- [ ] AI-powered onboarding FAQs (chatbot for new hires)
-
-### 3) Attendance & Leave
-- [ ] Auto-anomaly detection (flag suspicious clock-ins/outs)
-- [ ] Predict absenteeism trends
-
-### 4) Payroll
-- [ ] Automate salary calculations based on hours worked
-- [ ] AI to predict payroll errors before run
-
-### 5) Performance Reviews
-- [x] **AI Performance Review Generator** – Gemini generates structured performance review drafts based on employee data and tenure
-- [x] **Team Performance Review AI** – AI-generated team-level review summaries
-- [ ] Analyze feedback sentiment
-- [ ] Predict top performers early using trends
-
-### 6) Training & Development
-- [ ] Recommend personalized training based on skills gap analysis
-- [ ] Identify employees who need help before performance drops
-
-### 7) Employee Engagement
-- [ ] Sentiment analysis of surveys / feedback
-- [ ] AI to detect patterns in complaints/issues before they escalate
-
-### 8) Compliance
-- [ ] Monitor documents for expiry (visas, certifications)
-- [ ] Alert for missing mandatory trainings
-
-### 9) Exit Management
-- [ ] Predict attrition risks early
-- [ ] Automate exit surveys and analyze them
-
-### 10) HR Chatbot
-- [x] **HR AI Chatbot** – Embedded chat widget (HRChatbot.js) powered by Gemini for 24/7 HR Q&A (leave balances, policies, payslips)
-- [x] Chat transcript logging in ChatLogs collection
-
-### AI Tools Page (Additional AI Features)
-- [x] **Job Matching** – Match employees or candidates to open positions using skill alignment scoring
-- [x] **Skills Assessment** – AI-powered gap analysis between employee skills and role requirements
-- [x] **Talent Insights** – Attrition risk scoring, high performer identification, and talent heatmaps
-- [x] **Resume Screening** – Upload and screen multiple resumes with instant AI scoring
+| Module | Status | Details |
+|---|---|---|
+| **Training & development** | [x] | Course catalogue, assign to selected/all employees with due dates, employee progress, completing a course adds its skills to the employee, **skill-gap recommendations** (skills in demand from open jobs and department peers that the employee lacks) |
+| **Surveys & engagement** | [x] | Engagement/pulse surveys (rating, text, choice); anonymous mode with hashed one-response-per-person and results hidden below 3 responses; per-question stats, comment sentiment and **complaint-theme detection**; the latest survey feeds the engagement score |
+| **Compliance** | [x] | Documents expired or expiring within 60 days, **required documents** missing, mandatory trainings unassigned/overdue, one-click reminders |
+| **Onboarding** | [x] | Checklist created automatically for each new employee (and on demand): employee tasks, HR tasks, required documents and mandatory trainings that tick themselves off when satisfied; template editable in Settings |
+| **Exit management** | [x] | Resignation request, approval, exit checklist, standing exit-interview survey, completing an exit deactivates the employee and user, attrition analytics (reasons, tenure at exit, exit survey) |
+| **Recruitment** | [x] | Job openings, a candidate table, bulk import from a pasted list (AI-read, reviewed before adding), candidates, skill-match %, **candidate fit prediction** (60 % skills, 25 % experience, 15 % similarity to current top performers), job-description generator |
+| **Public careers page** | [x] | `/careers` without login: open jobs (whitelisted fields only), apply, candidate chatbot about open roles; per-IP rate limits and a honeypot |
+| **Recognition & gamification** | [x] | Peer kudos (5 badges, points, 5 per day limit), public feed, 30-day / all-time leaderboard, automatic achievement badges earned from training, goals, attendance and recognition received |
+| **Integration hub** | [x] | HMAC-signed outbound webhooks for 7 HR events with SSRF protection, test button and last-delivery status; employee CSV export and import (dry run, validation, onboarding for imports) |
+| **Survey templates** | [x] | Engagement, weekly pulse, manager feedback and onboarding templates; edit before creating |
+| **Skill catalogue editor** | [x] | Visual editor (categories, skills, roles with required/recommended skills) for Admins on the Skills Assessment page |
+| **Mobile** | [x] | Installable PWA (manifest, shortcuts, service worker that never caches API data); every page checked on a phone-sized screen for errors and horizontal scrolling |
 
 ---
 
-## Upcoming / Backlog
-- [ ] SSO / OAuth2 integration
-- [ ] Mobile app (React Native / Flutter)
-- [ ] Slack / Teams notifications integration
-- [ ] Advanced AI: on-premise transformer models
-- [ ] Voice-enabled clock-in
-- [ ] Gamification (badges, leaderboards)
+## AI & analytics
+
+| Feature | Status | How it works |
+|---|---|---|
+| LLM providers | [x] | **Gemini and Groq**, either or both; per-task preference, automatic fallback with cooldown on rate limits, status endpoint (`utils/llm.py`) |
+| HR chatbot | [x] | LLM with the user's own data (profile, manager, team, leave balance, payslip, trainings, reviews), conversation history and the company FAQ; otherwise rule-based answers + FAQ matching. Logged to `ChatLogs` |
+| Job matching | [x] | Skill-overlap ranking against a recruitment-board job |
+| Performance review generator | [x] | Built from the employee's reviews, OKRs, attendance, leaves and skills; Gemini only rewrites the summary |
+| Talent insights, growth (high potential, rising stars, needs support) | [x] | Computed in `ai_analytics/insights.py` (rules) |
+| Attrition risk | [x] | Rules by default; **trained logistic-regression model** automatically once 8+ exits are recorded (shows model type, accuracy, per-employee drivers) |
+| Attendance anomalies, payroll pre-run checks | [x] | Missing clock-outs, short/long shifts, late arrivals; missing salaries, outliers, missing payslips |
+| Analytics (HR/Admin) | [x] | Seven tabs computed live: overview, workforce and attrition, hiring, attendance and leave, performance and learning, pay and cost, engagement and risk; plain-language findings on each |
+| Skills assessment | [x] | Role/skill catalogue stored in MongoDB (`/api/skills/catalog/`; Admins edit it from the page as JSON) with demand from open jobs |
+| Resume screening | [x] | PDF/DOCX/text parsed and scored by the LLM (verified live with Gemini); clear 503 when no key is set; results are saved to the database |
+| Team review (AI Tools) | [x] | Ratings pre-filled from data; LLM narrative validated against the facts, template fallback |
+| Analytics briefing, development plan, survey summary, job-match notes | [x] | LLM output grounded in database facts (`ai_analytics/assistant.py`), JSON-validated, deterministic fallback |
+| Team attendance (Attendance > Team) | [x] | Who is in, on leave, late or missing on any day, with clock times in the company timezone; Admin / Manager / HR |
+| Talent insights | [x] | Engagement history, attrition by tenure and department, exits by month / reason / department, skills demand, growth pipeline; all computed from your records |
+| Demo data and integrity checker | [x] | `seed_data.py --yes` loads a coherent 49-person company; `check_data.py` verifies it (also run by a test) |
+
+---
+
+## Not built
+- [ ] A native mobile app (the PWA covers installs) and vendor-specific connectors (Workday / SAP / BambooHR) beyond the webhook and CSV tools
+- [ ] More sophisticated models: the attrition model is a small logistic regression and candidate fit is a transparent score
+- [ ] Resume file parsing beyond PDF/DOCX/text, e-signature of documents
+- [x] Saved AI performance reviews: save as draft, send to the employee or team with a note, search and filter, employees read theirs under Performance > Reviews
+- [x] Dashboard (role-aware, real data), notifications page and live notifications, resume upload and AI reading (single and bulk), public application form with shareable link and QR code, deleting job openings

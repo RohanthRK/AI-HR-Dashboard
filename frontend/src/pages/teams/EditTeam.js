@@ -32,11 +32,12 @@ const EditTeam = () => {
           const matchingTeam = dept.teams.find(team => team.id === id);
           if (matchingTeam) {
             // Check if user is the leader of this team
-            const isLeader = matchingTeam.employees.some(emp => 
-              (emp.employee_id || emp.id) === currentUser?.employee_id && emp.is_leader
+            const ownsTeam = matchingTeam.employees.some(emp =>
+              (emp.is_leader || emp.is_manager) &&
+              (emp.id === currentUser?.employee_id || (currentUser?.employee_code && emp.employee_id === currentUser.employee_code))
             );
-            
-            if (!isAdminOrManager && !isLeader) {
+
+            if (currentUser?.role !== 'Admin' && !(currentUser?.role === 'Manager' && ownsTeam)) {
               navigate(`/teams/${id}`);
               return;
             }

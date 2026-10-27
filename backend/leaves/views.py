@@ -1,10 +1,10 @@
-from django.shortcuts import render
 
 # Create your views here.
 
 """
 Views for leave management
 """
+import logging
 import json
 import datetime
 from bson import ObjectId
@@ -12,6 +12,12 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
+from utils.app_settings import notification_enabled
+from utils.notify import deliver_external
+from utils.events import emit
+from utils.auth_utils import is_privileged, owns_employee, forbidden
+from utils.hr_common import LEAVE_ENTITLEMENTS
+from utils.workdays import workdays
 from hr_backend.db import leaves, employees, notifications, teams as teams_collection, users as users_collection
 
 def find_employee_by_id_or_code(emp_key):
@@ -47,6 +53,33 @@ def find_employee_by_id_or_code(emp_key):
         pass
     return None
 
+def managed_member_ids(user_id):
+    """
+    Every id (business code and Mongo _id) of the people a user manages: employees whose manager_id is that user's
+    employee record, plus the members of teams the user manages or leads. Empty for people who manage nobody.
+    """
+    user = users_collection.find_one({'_id': ObjectId(str(user_id))}) if user_id else None
+    me = None
+    if user:
+        me = find_employee_by_id_or_code(user.get('employee_id')) or employees.find_one({'user_id': str(user['_id'])})
+    my_refs = {str(user_id)}
+    if me:
+        my_refs |= {str(me['_id']), str(me.get('employee_id', ''))}
+    my_refs.discard('')
+    member_refs = set()
+    for emp in employees.find({'manager_id': {'$in': list(my_refs)}}):
+        member_refs |= {str(emp['_id']), str(emp.get('employee_id', ''))}
+    for team in teams_collection.find({'$or': [{'manager_id': {'$in': list(my_refs)}}, {'leader_id': {'$in': list(my_refs)}}]}):
+        refs = [str(m) for m in team.get('members', [])] + [str(m.get('id')) for m in team.get('employees', []) if isinstance(m, dict)]
+        for ref in refs:
+            emp = find_employee_by_id_or_code(ref)
+            member_refs |= ({str(emp['_id']), str(emp.get('employee_id', ''))} if emp else {ref})
+    if me:
+        member_refs -= {str(me['_id']), str(me.get('employee_id', ''))}   # nobody manages themselves
+    member_refs.discard('')
+    return member_refs
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def request_leave(request):
@@ -60,7 +93,7 @@ def request_leave(request):
         
         # Parse JSON data
         data = json.loads(request.body)
-        employee_id = data.get('employee_id') or user_id
+        data.get('employee_id') or user_id
         leave_type = data.get('leave_type')
         start_date = data.get('start_date')
         end_date = data.get('end_date')
@@ -74,6 +107,8 @@ def request_leave(request):
                 'error': 'Missing data',
                 'message': 'Leave type, start date, and end date are required'
             }, status=400)
+        if leave_type not in LEAVE_ENTITLEMENTS:
+            return JsonResponse({'error': 'Invalid leave type', 'message': f"Leave type must be one of {', '.join(LEAVE_ENTITLEMENTS)}"}, status=400)
             
         # Robust employee lookup:
         # Step 1: Find the User document
@@ -104,6 +139,13 @@ def request_leave(request):
             start = datetime.date.fromisoformat(start_date)
             end = datetime.date.fromisoformat(end_date)
             
+            today = datetime.datetime.now(tz=datetime.timezone.utc).date()
+            if start < today - datetime.timedelta(days=30) or end > today + datetime.timedelta(days=548):
+                return JsonResponse({
+                    'error': 'Invalid dates',
+                    'message': 'Leave can start at most 30 days ago and be requested up to 18 months ahead'
+                }, status=400)
+            working = workdays(start, end)
             if is_half_day:
                 days = 0.5
                 if start_date != end_date:
@@ -117,9 +159,16 @@ def request_leave(request):
                         'message': 'Half day segment (First/Second Half) is required'
                     }, status=400)
             else:
-                delta = end - start
-                days = float(delta.days + 1)  # Include both start and end days
-            
+                days = float(len(working))        # Mon-Fri, minus company holidays
+                if end - start > datetime.timedelta(days=120):
+                    return JsonResponse({'error': 'Invalid dates', 'message': 'A single request can cover at most 120 days'}, status=400)
+            if end < start:
+                return JsonResponse({'error': 'Invalid dates', 'message': 'End date must be after start date'}, status=400)
+            if not working:
+                return JsonResponse({
+                    'error': 'No working days',
+                    'message': 'The selected dates are weekends or company holidays, so there is nothing to request'
+                }, status=400)
             if days <= 0:
                 return JsonResponse({
                     'error': 'Invalid dates',
@@ -155,6 +204,18 @@ def request_leave(request):
                     'message': 'You already have an approved or pending leave request for these dates'
                 }, status=409)
             
+        entitlement = LEAVE_ENTITLEMENTS.get(leave_type)
+        if entitlement is not None:
+            year = str(start.year)
+            used = sum(float(l.get('days', 0)) for l in leaves.find({
+                'employee_id': target_employee_code, 'leave_type': leave_type, 'status': {'$in': ['Pending', 'Approved']},
+                'start_date': {'$regex': f'^{year}'}}))
+            if used + days > entitlement:
+                return JsonResponse({
+                    'error': 'Insufficient balance',
+                    'message': f"{leave_type}: {max(entitlement - used, 0):g} of {entitlement} days left in {year}, but this request needs {days:g}"
+                }, status=400)
+
         # 3. ENHANCE: Resolve Reporting Manager's User ID
         manager_user_id = None
         manager_name = 'System Admin'
@@ -187,7 +248,7 @@ def request_leave(request):
                     if manager_user:
                         manager_user_id = str(manager_user['_id'])
             except Exception as e:
-                pass
+                logging.getLogger(__name__).warning('Ignored error in %s: %s', __name__, e)
         
         # FALLBACK: If no manager found, default to first Admin user
         if not manager_user_id:
@@ -229,8 +290,12 @@ def request_leave(request):
                 'created_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
                 'read': False
             }
-            notifications.insert_one(manager_notification)
+            if notification_enabled('leave_request'):
+                notifications.insert_one(manager_notification)
+                deliver_external(manager_user_id, manager_notification['title'], manager_notification['message'])
         
+        emit('leave.requested', {'leave_id': str(result.inserted_id), 'employee': f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip(),
+                                 'leave_type': leave_type, 'start_date': start_date, 'end_date': end_date, 'days': days})
         return JsonResponse({
             'message': 'Leave request submitted successfully',
             'leave_id': str(result.inserted_id),
@@ -259,7 +324,7 @@ def get_leave_requests(request, status=None, is_personal=False):
     try:
         # Parse query parameters
         employee_id = request.GET.get('employee_id')
-        leave_type = request.GET.get('leave_type')
+        request.GET.get('leave_type')
         # is_personal can come from URL kwargs (me/ route) OR query param ?me=true
         is_personal = is_personal or (request.GET.get('me') == 'true')
         
@@ -309,27 +374,15 @@ def get_leave_requests(request, status=None, is_personal=False):
             else:
                 query_filter['employee_id'] = employee_id
         
-        # 3. MANAGER ROLE: See leaves from their direct reports or team members
+        # 3. MANAGER ROLE: leaves of their direct reports and of the teams they manage or lead
         elif request.role == 'Manager':
             curr_user_id_str = str(request.user_id)
-            
-            # Direct reports: leaves where this manager is explicitly tagged
-            manager_clause = {'manager_id': curr_user_id_str}
-            
-            # Also check teams this manager manages
-            managed_teams = list(teams_collection.find({'manager_id': curr_user_id_str}))
-            team_member_ids = []
-            for team in managed_teams:
-                team_member_ids.extend(team.get('members', []))
-            
-            if team_member_ids:
-                query_filter['$or'] = [
-                    manager_clause,
-                    {'employee_id': {'$in': team_member_ids}}
-                ]
-            else:
-                query_filter.update(manager_clause)
-        
+            member_ids = list(managed_member_ids(curr_user_id_str))
+            clauses = [{'manager_id': curr_user_id_str}]
+            if member_ids:
+                clauses.append({'employee_id': {'$in': member_ids}})
+            query_filter['$or'] = clauses
+
         # 4. ADMIN/HR: See all leaves (no additional filter besides status if given)
         # (query_filter already has status filter if needed, no employee restriction)
             
@@ -430,23 +483,22 @@ def update_leave_status(request, leave_id, status=None):
         curr_user_id_str = str(request.user_id)
         is_designated_manager = str(leave.get('manager_id')) == curr_user_id_str
         
-        # Check permissions: Admin, Manager, OR Team Lead, OR Designated Manager
-        can_approve = False
-        if request.role in ['Admin', 'Manager'] or is_designated_manager:
-            can_approve = True
-        
-        # If not authorized via role or designation, check if they are the Team's Manager (Team Lead)
-        if not can_approve:
-            applicant_employee_id = leave.get('employee_id')
-            
-            # Match against 'manager_id' in Teams collection (which stores user_id as string)
-            team = teams_collection.find_one({
-                'manager_id': curr_user_id_str,
-                'members': applicant_employee_id
-            })
-            if team:
-                can_approve = True
-                    
+        # Nobody may decide their own request
+        if owns_employee(request, leave.get('employee_id')):
+            return JsonResponse({
+                'error': 'Permission denied',
+                'message': 'You cannot approve or reject your own leave request'
+            }, status=403)
+
+        # Permissions: Admin always; otherwise the designated manager, or a manager / team lead of the applicant
+        can_approve = request.role == 'Admin' or is_designated_manager
+        if not can_approve and request.role in ('Manager', 'HR'):
+            applicant = find_employee_by_id_or_code(leave.get('employee_id'))
+            applicant_refs = {str(leave.get('employee_id'))}
+            if applicant:
+                applicant_refs |= {str(applicant['_id']), str(applicant.get('employee_id', ''))}
+            can_approve = bool(applicant_refs & managed_member_ids(curr_user_id_str))
+
         if not can_approve:
             return JsonResponse({
                 'error': 'Permission denied',
@@ -517,8 +569,12 @@ def update_leave_status(request, leave_id, status=None):
             'read': False
         }
         
-        notifications.insert_one(employee_notification)
+        if notification_enabled('leave_update'):
+            notifications.insert_one(employee_notification)
+            deliver_external(emp_user_id, employee_notification['title'], employee_notification['message'])
         
+        emit(f'leave.{status.lower()}', {'leave_id': leave_id, 'employee_id': str(leave.get('employee_id')),
+                                         'leave_type': leave.get('leave_type'), 'days': leave.get('days')})
         return JsonResponse({
             'message': f'Leave request {status.lower()} successfully',
             'status': status
@@ -563,6 +619,9 @@ def get_leave_balance(request, employee_id):
                 'error': 'Not found',
                 'message': f'Employee with ID {employee_id} not found'
             }, status=404)
+
+        if not is_privileged(request) and not owns_employee(request, str(employee['_id'])):
+            return forbidden('You can only view your own leave balance')
             
         # The keys for lookups: both employee_id string and MongoDB _id
         emp_code = employee.get('employee_id', str(employee['_id']))
@@ -603,16 +662,13 @@ def get_leave_balance(request, employee_id):
             pending[leave_type] += leave.get('days', 0)
             
         # Default leave entitlements
-        entitlements = {
-            'Earned Leaves': 18,
-            'LOP Leaves': 100 # Large number for loss of pay
-        }
-        
-        # Calculate remaining leaves
+        entitlements = dict(LEAVE_ENTITLEMENTS)
+
+        # Remaining days per type (None for unlimited unpaid leave)
         remaining = {}
         for leave_type, entitlement in entitlements.items():
             used = used_leaves.get(leave_type, 0)
-            remaining[leave_type] = entitlement - used
+            remaining[leave_type] = None if entitlement is None else entitlement - used
             
         return JsonResponse({
             'employee_id': emp_code,
@@ -640,7 +696,8 @@ def get_leave_types(request):
     try:
         # Default leave types
         leave_types = [
-            {'id': 'Earned Leaves', 'name': 'Earned Leaves', 'description': 'Paid vacation time'},
+            {'id': 'Earned Leaves', 'name': 'Earned Leaves', 'description': 'Paid vacation time (18 days a year)'},
+            {'id': 'Sick Leaves', 'name': 'Sick Leaves', 'description': 'Paid sick leave (10 days a year)'},
             {'id': 'LOP Leaves', 'name': 'LOP Leaves', 'description': 'Loss of Pay / Unpaid leave'}
         ]
         

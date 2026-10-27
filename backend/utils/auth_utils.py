@@ -116,10 +116,128 @@ def require_team_leader_or_role(allowed_roles):
                     }, status=403)
                     
             except Exception as e:
-                print(f"Auth check error: {e}")
                 # Fallback to forbidden if we can't verify
                 return JsonResponse({'error': 'Forbidden', 'message': 'Permission verification failed'}, status=403)
                 
             return view_func(request, *args, **kwargs)
         return _wrapped_view
     return decorator
+
+
+PRIVILEGED_ROLES = ('Admin', 'Manager', 'HR')
+
+
+def is_privileged(request):
+    """True for Admin / Manager / HR."""
+    return getattr(request, 'role', '') in PRIVILEGED_ROLES
+
+
+def owns_employee(request, emp_ref):
+    """True if emp_ref (Mongo _id string or business code) refers to the logged-in user's employee."""
+    mine = str(getattr(request, 'employee_id', '') or '')
+    ref = str(emp_ref or '')
+    if not mine or not ref:
+        return False
+    if mine == ref:
+        return True
+    keys = set()
+    for ident in (mine, ref):
+        doc = employees.find_one({'employee_id': ident})
+        if not doc and len(ident) == 24:
+            try:
+                doc = employees.find_one({'_id': ObjectId(ident)})
+            except Exception:
+                doc = None
+        keys.add(frozenset(filter(None, [str(doc['_id']), doc.get('employee_id')])) if doc else frozenset([ident]))
+    return len(keys) == 1
+
+
+def forbidden(message='You do not have permission to perform this action.'):
+    return JsonResponse({'error': 'Forbidden', 'message': message}, status=403)
+
+
+SENSITIVE_EMPLOYEE_FIELDS = (
+    'salary', 'date_of_birth', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone',
+    'emergency_contact_relationship', 'personal_email', 'address', 'marital_status', 'bank_details', 'tax_id',
+    'pay_items', 'leave_balance', 'documents',
+)
+
+
+MANAGER_HIDDEN_FIELDS = ('bank_details', 'tax_id', 'personal_email', 'documents', 'emergency_contact', 'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relationship', 'address', 'marital_status', 'date_of_birth')
+
+
+def redact_employee(request, doc):
+    """
+    Pay and personal details: everyone sees their own; Admin sees all; a manager also sees salary (not bank or tax
+    details) for the people who report to them; everyone else gets the directory view.
+    """
+    if is_admin(request):
+        return doc
+    mine = str(getattr(request, 'employee_id', '') or '')
+    if mine and mine in {str(doc.get('_id', '')), str(doc.get('employee_id', ''))}:
+        return doc
+    if getattr(request, 'role', '') == 'Manager':
+        scope = visible_refs(request) or set()
+        if {str(doc.get('_id', '')), str(doc.get('employee_id', ''))} & scope:
+            return {k: v for k, v in doc.items() if k not in MANAGER_HIDDEN_FIELDS}
+    return {k: v for k, v in doc.items() if k not in SENSITIVE_EMPLOYEE_FIELDS}
+
+
+def is_admin(request):
+    """Admin (HR) accounts see everything."""
+    return getattr(request, 'role', '') == 'Admin'
+
+
+def visible_refs(request):
+    """
+    Whose records the viewer may see: None for Admin (everyone); otherwise a set holding every identifier
+    (Mongo _id string and employee code) of the viewer, everyone who reports to them (directly or not) and the
+    members of teams they manage or lead. Managers use it to stay within their own reports.
+    """
+    if is_admin(request):
+        return None
+    cached = getattr(request, '_visible_refs', None)
+    if cached is not None:
+        return cached
+    mine = str(getattr(request, 'employee_id', '') or '')
+    me = employees.find_one({'employee_id': mine}) or (employees.find_one({'_id': ObjectId(mine)}) if len(mine) == 24 else None)
+    refs = {mine} if mine else set()
+    if me:
+        refs |= {str(me['_id']), me.get('employee_id', '')}
+        if getattr(request, 'role', '') == 'Manager':
+            people = {str(e['_id']): e for e in employees.find({}, {'manager_id': 1, 'employee_id': 1})}
+            frontier = {str(me['_id'])}
+            below = set()
+            while frontier:
+                nxt = {pid for pid, e in people.items() if str(e.get('manager_id') or '') in frontier and pid not in below}
+                below |= nxt
+                frontier = nxt
+            for team in teams.find({'$or': [{'manager_id': str(me['_id'])}, {'leader_id': str(me['_id'])}]}):
+                below |= {str(m) for m in team.get('members', [])}
+            below.discard(str(me['_id']))
+            for pid in below:
+                refs |= {pid, people[pid].get('employee_id', '')} if pid in people else {pid}
+    refs.discard('')
+    request._visible_refs = refs
+    return refs
+
+
+def can_see_employee(request, emp_ref):
+    """Admin: always. Manager: themself and their reports. Employee: only themself."""
+    scope = visible_refs(request)
+    if scope is None:
+        return True
+    ref = str(emp_ref or '')
+    if ref in scope:
+        return True
+    doc = employees.find_one({'employee_id': ref}) or (employees.find_one({'_id': ObjectId(ref)}) if len(ref) == 24 else None)
+    return bool(doc) and bool({str(doc['_id']), doc.get('employee_id', '')} & scope)
+
+
+def scope_query(request, field, query=None):
+    """Add `field in scope` to a Mongo query unless the viewer is Admin."""
+    query = dict(query or {})
+    scope = visible_refs(request)
+    if scope is not None:
+        query[field] = {'$in': sorted(scope)}
+    return query

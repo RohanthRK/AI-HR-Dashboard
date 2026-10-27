@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
+
 import {
   Box,
   Typography,
   Paper,
-  Grid,
   TextField,
   Button,
   CircularProgress,
@@ -11,13 +11,9 @@ import {
   CardContent,
   CardHeader,
   Avatar,
-  Divider,
   Chip,
   Alert,
   List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
   FormControl,
   InputLabel,
   MenuItem,
@@ -30,120 +26,53 @@ import {
   TableHead,
   TableRow,
   Tooltip,
-  IconButton,
   Badge,
-  Tabs,
-  Tab,
-  LinearProgress,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
-  Psychology as PsychologyIcon,
   School as SchoolIcon,
   CheckCircle as CheckCircleIcon,
   Assignment as AssignmentIcon,
-  AssignmentTurnedIn as AssignmentTurnedInIcon,
   AddCircle as AddCircleIcon,
   WorkOutline as WorkOutlineIcon,
   Search as SearchIcon,
   TipsAndUpdates as TipsAndUpdatesIcon,
-  Star as StarIcon,
   Info as InfoIcon,
   Lightbulb as LightbulbIcon,
 } from '@mui/icons-material';
 import aiService from '../../services/aiService';
 
-// Mock skills data
-const skillCategories = [
-  {
-    id: 'tech',
-    name: 'Technical Skills',
-    skills: [
-      { id: 'js', name: 'JavaScript', description: 'JavaScript programming language' },
-      { id: 'react', name: 'React', description: 'React.js library for UI development' },
-      { id: 'node', name: 'Node.js', description: 'Server-side JavaScript runtime' },
-      { id: 'python', name: 'Python', description: 'Python programming language' },
-      { id: 'java', name: 'Java', description: 'Java programming language' },
-      { id: 'aws', name: 'AWS', description: 'Amazon Web Services cloud platform' },
-      { id: 'docker', name: 'Docker', description: 'Containerization platform' },
-      { id: 'kubernetes', name: 'Kubernetes', description: 'Container orchestration system' },
-      { id: 'sql', name: 'SQL', description: 'Structured Query Language for databases' },
-    ]
-  },
-  {
-    id: 'soft',
-    name: 'Soft Skills',
-    skills: [
-      { id: 'comm', name: 'Communication', description: 'Effective verbal and written communication' },
-      { id: 'teamwork', name: 'Teamwork', description: 'Collaborating effectively in a team' },
-      { id: 'problem', name: 'Problem Solving', description: 'Analytical approach to solving complex problems' },
-      { id: 'leadership', name: 'Leadership', description: 'Guiding and inspiring a team' },
-      { id: 'time', name: 'Time Management', description: 'Effective prioritization and time allocation' },
-    ]
-  },
-  {
-    id: 'design',
-    name: 'Design Skills',
-    skills: [
-      { id: 'ui', name: 'UI Design', description: 'User interface design principles and tools' },
-      { id: 'ux', name: 'UX Design', description: 'User experience research and design' },
-      { id: 'figma', name: 'Figma', description: 'Collaborative interface design tool' },
-      { id: 'photoshop', name: 'Photoshop', description: 'Image editing and design software' },
-    ]
-  },
-];
+import api from '../../services/api';
 
-// Mock job roles and required skills
-const jobRoles = [
-  {
-    id: 'frontend',
-    title: 'Frontend Developer',
-    requiredSkills: ['js', 'react', 'ui'],
-    recommendedSkills: ['node', 'aws', 'ux'],
-    description: 'Builds user interfaces and client-side functionality for web applications.'
-  },
-  {
-    id: 'backend',
-    title: 'Backend Developer',
-    requiredSkills: ['js', 'node', 'sql'],
-    recommendedSkills: ['python', 'aws', 'docker'],
-    description: 'Develops server-side logic and database integrations for web applications.'
-  },
-  {
-    id: 'fullstack',
-    title: 'Full Stack Developer',
-    requiredSkills: ['js', 'react', 'node', 'sql'],
-    recommendedSkills: ['aws', 'docker', 'kubernetes'],
-    description: 'Develops both client and server-side components of web applications.'
-  },
-  {
-    id: 'uxdesigner',
-    title: 'UX Designer',
-    requiredSkills: ['ui', 'ux', 'figma'],
-    recommendedSkills: ['comm', 'problem', 'photoshop'],
-    description: 'Designs user experiences for digital products and services.'
-  },
-  {
-    id: 'projectmgr',
-    title: 'Project Manager',
-    requiredSkills: ['comm', 'leadership', 'time'],
-    recommendedSkills: ['teamwork', 'problem'],
-    description: 'Oversees and coordinates software development projects from inception to delivery.'
-  },
-];
+import authService from '../../services/authService';
 
-// Mock organization's skill needs
-const organizationSkillNeeds = [
-  { id: 'react', count: 12, filled: 8, gap: 4 },
-  { id: 'aws', count: 10, filled: 4, gap: 6 },
-  { id: 'python', count: 8, filled: 7, gap: 1 },
-  { id: 'kubernetes', count: 6, filled: 2, gap: 4 },
-  { id: 'leadership', count: 5, filled: 3, gap: 2 },
-];
+import SkillCatalogEditor from '../../components/skills/SkillCatalogEditor';
 
-// Flattened skills lookup
-const allSkills = skillCategories.flatMap(category => category.skills);
 
 const SkillsAssessment = () => {
+  // Skill catalogue (categories, roles, open-position demand) comes from the backend
+  const [catalog, setCatalog] = useState({ categories: [], roles: [], organizationNeeds: [] });
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const skillCategories = catalog.categories;
+  const jobRoles = catalog.roles;
+  const organizationSkillNeeds = catalog.organizationNeeds;
+  const allSkills = skillCategories.flatMap((category) => category.skills);
+
+  // Admin-only visual editor for the catalogue
+  const [catalogEditorOpen, setCatalogEditorOpen] = useState(false);
+  const saveCatalog = async (data) => {
+    const res = await api.put('/api/skills/catalog/', data);
+    setCatalog(res.data);
+    setCatalogEditorOpen(false);
+  };
+
+  useEffect(() => {
+    api.get('/api/skills/catalog/')
+      .then((res) => setCatalog(res.data))
+      .catch(() => setError('Could not load the skill catalogue.'))
+      .finally(() => setCatalogLoading(false));
+  }, []);
+
   // State for job role selection
   const [selectedRole, setSelectedRole] = useState('');
   const [roleDetails, setRoleDetails] = useState(null);
@@ -330,11 +259,9 @@ const SkillsAssessment = () => {
     try {
       // Convert skills from objects to strings if needed
       const skillsToSend = selectedSkills.map(skill => skill.name || skill);
-      console.log('Searching for employees with skills:', skillsToSend);
       
       // Call the API to find employees with these skills
       const results = await aiService.findEmployeesBySkills(skillsToSend);
-      console.log('Found employees:', results);
       
       setMatchingEmployees(results);
       
@@ -362,6 +289,12 @@ const SkillsAssessment = () => {
   
   return (
     <Box sx={{ p: 3 }}>
+      {authService.isAdmin() && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+          <Button size="small" onClick={() => setCatalogEditorOpen(true)}>Edit skill catalogue</Button>
+        </Box>
+      )}
+      <SkillCatalogEditor open={catalogEditorOpen} catalog={catalog} onClose={() => setCatalogEditorOpen(false)} onSave={saveCatalog} />
       <Typography variant="h4" component="h1" gutterBottom>
         AI Skills Assessment
       </Typography>

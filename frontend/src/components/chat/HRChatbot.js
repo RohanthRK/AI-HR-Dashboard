@@ -1,7 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
+
 import {
-    Box, IconButton, Typography, TextField, Button,
-    Paper, ClickAwayListener, Fab, Zoom
+  Box,
+  IconButton,
+  Typography,
+  TextField,
+  Button,
+  Paper,
+  Fab,
+  Zoom,
 } from '@mui/material';
 import {
     Chat as ChatIcon,
@@ -10,8 +17,11 @@ import {
     SmartToy as SmartToyIcon,
     Person as PersonIcon
 } from '@mui/icons-material';
+
 import axios from '../../services/api';
+
 import ReactMarkdown from 'react-markdown';
+
 
 const HRChatbot = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -39,7 +49,8 @@ const HRChatbot = () => {
         setIsLoading(true);
 
         try {
-            const response = await axios.post('/api/ai/chatbot/', { message: userMessage });
+            const history = messages.slice(1).slice(-6).map((m) => ({ from: m.sender === 'user' ? 'user' : 'bot', text: m.text }));
+            const response = await axios.post('/api/ai/chatbot/', { message: userMessage, history });
             setMessages(prev => [...prev, { text: response.data.reply, sender: 'ai' }]);
         } catch (error) {
             console.error('Chatbot error:', error);
@@ -73,7 +84,7 @@ const HRChatbot = () => {
                         borderRadius: 0,
                         bgcolor: '#E0FF4F',
                         color: '#000',
-                        zIndex: 9999,
+                        zIndex: 1250,
                         '&:hover': {
                             bgcolor: '#d4f242',
                             transform: 'translate(-2px, -2px)',
@@ -100,7 +111,7 @@ const HRChatbot = () => {
                         borderRadius: 0,
                         bgcolor: '#fff',
                         visibility: isOpen ? 'visible' : 'hidden',
-                        zIndex: 9999,
+                        zIndex: 1250,
                         overflow: 'hidden'
                     }}
                 >

@@ -1,0 +1,52 @@
+# Local / small-server deployment:  docker compose up --build
+# Set secrets in a .env file next to this one (SECRET_KEY is required; AI, SSO and SMTP settings are optional).
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on: [mongo]
+    environment:
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env (a long random string)}
+      MONGODB_URI: mongodb://mongo:27017/
+      MONGODB_NAME: ${MONGODB_NAME:-hr_dashboard_db}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+      CORS_ALLOWED_ORIGINS: ${FRONTEND_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      SSO_BACKEND_URL: ${SSO_BACKEND_URL:-http://localhost:8000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_PROVIDER_ORDER: ${LLM_PROVIDER_ORDER:-gemini,groq}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+    volumes:
+      - media:/app/media
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "3000:80"
+
+volumes:
+  mongo-data:
+  media:

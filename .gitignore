@@ -70,3 +70,7 @@ backend/*_results.txt
 backend/seed_performance.py
 backend/scripts/
 Skills.txt
+
+# e2e artefacts
+e2e/build/
+e2e/screenshots/

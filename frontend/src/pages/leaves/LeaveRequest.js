@@ -1,27 +1,35 @@
 import React, { useState } from 'react';
+
 import { useNavigate } from 'react-router-dom';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Grid,
+
+import {
+  Box,
+  Typography,
+  Paper,
   TextField,
   Button,
   MenuItem,
   FormControl,
-  FormHelperText,
   FormControlLabel,
   Checkbox,
   Radio,
   RadioGroup,
   FormLabel,
-  CircularProgress
+  CircularProgress,
+  Alert,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+
 import { format } from 'date-fns';
+
 import leaveService from '../../services/leaveService';
+import { countWorkdays, useCompanyHolidays } from '../../utils/company';
+
 import { useSnackbar } from 'notistack';
+
 
 const LeaveRequest = () => {
   const navigate = useNavigate();
@@ -39,7 +47,8 @@ const LeaveRequest = () => {
   const [errors, setErrors] = useState({});
   
   const leaveTypes = [
-    { value: 'Earned Leaves', label: 'Earned Leaves' },
+    { value: 'Earned Leaves', label: 'Earned Leaves (paid vacation)' },
+    { value: 'Sick Leaves', label: 'Sick Leaves (paid)' },
     { value: 'LOP Leaves', label: 'LOP Leaves' }
   ];
 
@@ -107,6 +116,11 @@ const LeaveRequest = () => {
       formIsValid = false;
     }
     
+    if (!formValues.isHalfDay && formValues.startDate && formValues.endDate && formValues.startDate <= formValues.endDate && countWorkdays(formValues.startDate, formValues.endDate) === 0) {
+      tempErrors.endDate = 'These dates are weekends or company holidays';
+      formIsValid = false;
+    }
+
     if (formValues.startDate && formValues.endDate && formValues.startDate > formValues.endDate) {
       tempErrors.endDate = 'End date cannot be before start date';
       formIsValid = false;
@@ -151,10 +165,14 @@ const LeaveRequest = () => {
     navigate('/leaves');
   };
 
+  useCompanyHolidays();            // weekends and company holidays are not leave days
+  const requestedDays = formValues.isHalfDay ? 0.5 : countWorkdays(formValues.startDate, formValues.endDate);
+  const hasDates = Boolean(formValues.startDate && (formValues.isHalfDay || formValues.endDate));
+
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Box>
-        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700, color: 'primary.main' }}>
+        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700, color: 'text.primary' }}>
           Request Leave
         </Typography>
         
@@ -261,6 +279,15 @@ const LeaveRequest = () => {
                 />
               </Grid>
               
+              {hasDates && (
+                <Grid item xs={12}>
+                  <Alert severity={requestedDays > 0 ? 'info' : 'warning'}>
+                    {requestedDays > 0
+                      ? `This request uses ${requestedDays} working day${requestedDays === 1 ? '' : 's'} (weekends and company holidays are not counted).`
+                      : 'These dates are weekends or company holidays, so there is nothing to request.'}
+                  </Alert>
+                </Grid>
+              )}
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 2 }}>
                   <Button variant="outlined" onClick={handleCancel} disabled={loading}>

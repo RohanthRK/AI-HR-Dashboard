@@ -1,359 +1,140 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box,
-  Typography,
-  Paper,
-  CircularProgress,
-  Alert,
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  Chip,
-  Tabs,
-  Tab,
-  Grid
+  Box, Typography, Paper, CircularProgress, Alert, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  TablePagination, Chip, Tabs, Tab, Dialog, DialogContent, DialogTitle, IconButton,
 } from '@mui/material';
-import attendanceService from '../../services/attendanceService';
-import { useSnackbar } from 'notistack';
-import { format } from 'date-fns';
-import { useTheme } from '@mui/material/styles';
-import AttendanceCalendar from './AttendanceCalendar';
-import ViewListIcon from '@mui/icons-material/ViewList';
+import CloseIcon from '@mui/icons-material/Close';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import GroupsIcon from '@mui/icons-material/Groups';
+import { useSnackbar } from 'notistack';
+import attendanceService from '../../services/attendanceService';
+import authService from '../../services/authService';
+import { formatTime, formatDate } from '../../utils/format';
+import MonthCalendar from '../../components/attendance/MonthCalendar';
+import AttendanceOverview from '../../components/attendance/AttendanceOverview';
 
-// Tab Panel component
-function TabPanel(props) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`attendance-tabpanel-${index}`}
-      aria-labelledby={`attendance-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box>{children}</Box>
-      )}
-    </div>
-  );
-}
+const statusChip = (status) => {
+  if (!status) return <Chip label="-" size="small" />;
+  const s = status.toLowerCase();
+  const color = s.includes('present') ? 'success' : s.includes('absent') ? 'error' : s.includes('late') ? 'warning' : s.includes('leave') ? 'info' : 'default';
+  return <Chip label={status} color={color} size="small" variant="outlined" />;
+};
 
 const Attendance = () => {
-  const theme = useTheme();
-  // Status states
+  const role = authService.getCurrentUser()?.role;
+  const isAdmin = role === 'Admin' || role === 'HR';
+  const canSeeOthers = isAdmin || role === 'Manager';
+  const { enqueueSnackbar } = useSnackbar();
+
   const [statusLoading, setStatusLoading] = useState(true);
   const [clockedIn, setClockedIn] = useState(false);
-  const [lastCheckInTime, setLastCheckInTime] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [since, setSince] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [refresh, setRefresh] = useState(0);              // bumps when you clock in or out so the calendar redraws
 
-  // History states
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [attendanceHistory, setAttendanceHistory] = useState([]);
+  const [tab, setTab] = useState('calendar');
+  const [person, setPerson] = useState(null);             // someone opened from the overview
+
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [totalRecords, setTotalRecords] = useState(0);
+  const [total, setTotal] = useState(0);
 
-
-  // Tab state
-  const [tabValue, setTabValue] = useState(0);
-
-  const { enqueueSnackbar } = useSnackbar();
-
-  // Fetch current attendance status
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
     try {
-      const statusData = await attendanceService.getStatus();
-      setClockedIn(statusData.is_clocked_in);
-      setLastCheckInTime(statusData.last_check_in);
+      const status = await attendanceService.getStatus();
+      setClockedIn(status.is_clocked_in);
+      setSince(status.last_check_in);
     } catch (error) {
-      console.error("Error fetching attendance status:", error);
       enqueueSnackbar(`Failed to load attendance status: ${error.message}`, { variant: 'error' });
       setClockedIn(false);
-      setLastCheckInTime(null);
+      setSince(null);
     } finally {
       setStatusLoading(false);
     }
   }, [enqueueSnackbar]);
 
-
-
-  // Fetch attendance history
-  const fetchHistory = useCallback(async (currentPage, currentRowsPerPage) => {
+  const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const params = {
-        page: currentPage + 1, // API is 1-based index
-        limit: currentRowsPerPage
-      };
-      const historyData = await attendanceService.getMyAttendance(params);
-      setAttendanceHistory(historyData.results || []);
-      setTotalRecords(historyData.count || 0);
+      const res = await attendanceService.getMyAttendance({ page: page + 1, limit: rowsPerPage });
+      setHistory(res.results || []);
+      setTotal(res.count || 0);
     } catch (error) {
-      console.error("Error fetching attendance history:", error);
       setHistoryError(`Failed to load attendance history: ${error.message}`);
-      enqueueSnackbar(`Failed to load attendance history: ${error.message}`, { variant: 'error' });
-      setAttendanceHistory([]);
-      setTotalRecords(0);
+      setHistory([]);
+      setTotal(0);
     } finally {
       setHistoryLoading(false);
     }
-  }, [enqueueSnackbar]);
+  }, [page, rowsPerPage]);
 
-  // Load status and initial history on component mount
-  useEffect(() => {
-    fetchStatus();
-    fetchHistory(page, rowsPerPage);
-  }, [fetchStatus, fetchHistory, page, rowsPerPage]); // Rerun if page/rowsPerPage changes
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => { if (tab === 'history') fetchHistory(); }, [tab, fetchHistory, refresh]);
 
-  // Handlers for Clock In/Out (slightly modified to refresh status/history)
-  const handleClockIn = async () => {
-    setIsSubmitting(true);
+  const clock = async (direction) => {
+    setBusy(true);
     try {
-      const response = await attendanceService.clockIn();
-      setClockedIn(true);
-      setLastCheckInTime(response.clock_in_time || new Date().toISOString());
-      enqueueSnackbar('Successfully clocked in!', { variant: 'success' });
-      fetchHistory(page, rowsPerPage); // Refresh history
+      if (direction === 'in') {
+        const res = await attendanceService.clockIn();
+        setClockedIn(true);
+        setSince(res.clock_in_time || new Date().toISOString());
+        enqueueSnackbar('Clocked in', { variant: 'success' });
+      } else {
+        await attendanceService.clockOut();
+        setClockedIn(false);
+        setSince(null);
+        enqueueSnackbar('Clocked out', { variant: 'success' });
+      }
+      setRefresh((n) => n + 1);
     } catch (error) {
-      console.error("Error clocking in:", error);
-      enqueueSnackbar(`Clock in failed: ${error.response?.data?.message || error.message || 'Unknown error'}`, { variant: 'error' });
+      enqueueSnackbar(`Clock ${direction} failed: ${error.response?.data?.message || error.message || 'Unknown error'}`, { variant: 'error' });
     } finally {
-      setIsSubmitting(false);
+      setBusy(false);
     }
-  };
-
-  const handleClockOut = async () => {
-    setIsSubmitting(true);
-    try {
-      await attendanceService.clockOut();
-      setClockedIn(false);
-      setLastCheckInTime(null);
-      enqueueSnackbar('Successfully clocked out!', { variant: 'success' });
-      fetchHistory(page, rowsPerPage); // Refresh history
-    } catch (error) {
-      console.error("Error clocking out:", error);
-      enqueueSnackbar(`Clock out failed: ${error.response?.data?.message || error.message || 'Unknown error'}`, { variant: 'error' });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Pagination handlers
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0); // Reset to first page
-  };
-
-  // Tab change handler
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
-  };
-
-  const formatTime = (isoString) => {
-    if (!isoString) return '--:--';
-    try {
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '--:--';
-      return format(date, 'HH:mm:ss');
-    } catch {
-      return '--:--';
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      // If it's already a full ISO string, parse directly
-      // If it's just YYYY-MM-DD, append time info for consistent parsing
-      const parsingString = dateString.length <= 10 ? `${dateString}T12:00:00` : dateString;
-      const date = new Date(parsingString);
-      if (isNaN(date.getTime())) return 'N/A';
-      return format(date, 'MMM dd, yyyy');
-    } catch {
-      return 'N/A';
-    }
-  };
-
-  const getStatusChip = (status) => {
-    let color = 'default';
-    let label = status || 'N/A';
-
-    if (!status) return <Chip label="N/A" size="small" />;
-
-    status = status.toLowerCase();
-
-    if (status.includes('present')) color = 'success';
-    else if (status.includes('absent')) color = 'error';
-    else if (status.includes('late')) color = 'warning';
-    else if (status.includes('leave')) color = 'info';
-    else if (status.includes('half')) color = 'secondary';
-
-    return <Chip label={label} color={color} size="small" variant="outlined" />;
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Attendance
-      </Typography>
-
-      {/* --- Clock In/Out Section --- */}
-      <Paper className="brutal-border brutal-shadow" sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h5" gutterBottom sx={{ fontWeight: 800 }}>
-          Today's Status
-        </Typography>
-        {statusLoading ? (
-          <CircularProgress size={24} />
-        ) : (
-          <>
-            <Typography variant="body1" gutterBottom>
-              Current status: <strong>{clockedIn ? 'Clocked In' : 'Clocked Out'}</strong>
+    <Box sx={{ p: { xs: 2, md: 3 } }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 1.5 }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 900 }}>Attendance</Typography>
+        <Paper className="brutal-border" sx={{ ml: { md: 'auto' }, px: 2, py: 1, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          {statusLoading ? <CircularProgress size={20} /> : (
+            <Typography variant="body1">
+              {clockedIn ? <>Clocked in{since ? <> since <strong>{formatTime(since)}</strong></> : null}</> : 'Not clocked in'}
             </Typography>
-            {clockedIn && lastCheckInTime && (
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                Clocked in at: {format(new Date(lastCheckInTime), 'MMM dd, yyyy HH:mm:ss')}
-              </Typography>
-            )}
-            <Box sx={{ mt: 2 }}>
-              <Button
-                className={!clockedIn ? "brutal-shadow-hover" : ""}
-                variant="contained"
-                color="primary"
-                sx={{ mr: 2, fontWeight: 800, border: '2px solid #000' }}
-                disabled={clockedIn || isSubmitting}
-                onClick={handleClockIn}
-              >
-                {isSubmitting && clockedIn === false ? <CircularProgress size={24} /> : 'Clock In'}
-              </Button>
-              <Button
-                className={clockedIn ? "brutal-shadow-hover" : ""}
-                variant="contained"
-                sx={{ fontWeight: 800, border: '2px solid #000', backgroundColor: '#FF5252', color: '#000', '&:hover': { backgroundColor: '#FF1744' } }}
-                disabled={!clockedIn || isSubmitting}
-                onClick={handleClockOut}
-              >
-                {isSubmitting && clockedIn === true ? <CircularProgress size={24} /> : 'Clock Out'}
-              </Button>
-            </Box>
-          </>
-        )}
-      </Paper>
-
-      {/* --- Weekly Stats & Timeline Section --- */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {/* Stats Panel */}
-        <Grid item xs={12} md={4}>
-          <Paper className="brutal-border brutal-shadow-hover" sx={{ p: 3, height: '100%', backgroundColor: theme.palette.mode === 'light' ? '#FFF9C4' : '#fcc419', color: '#000' }}>
-            <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>Weekly Stats</Typography>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>Avg. Working Hours / Day</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900 }}>
-                {attendanceHistory.length > 0 
-                  ? (attendanceHistory.reduce((acc, curr) => acc + (curr.total_hours || 0), 0) / attendanceHistory.length).toFixed(1) + 'h'
-                  : '0h'}
-              </Typography>
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>Total Days Recorded</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900 }}>{totalRecords}</Typography>
-            </Box>
-            <Box>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>Total Hours (This Period)</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: '#1b5e20' }}>
-                {attendanceHistory.reduce((acc, curr) => acc + (curr.total_hours || 0), 0).toFixed(1)}h
-              </Typography>
-            </Box>
-          </Paper>
-        </Grid>
-
-        {/* Weekly Timeline */}
-        <Grid item xs={12} md={8}>
-          <Paper className="brutal-border brutal-shadow-hover" sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" sx={{ fontWeight: 800, mb: 3 }}>Recent Activity Timeline</Typography>
-
-            {attendanceHistory.slice(0, 5).map((record, idx) => (
-              <Box key={idx} sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Typography sx={{ width: 80, fontWeight: 700 }}>{formatDate(record.date).split(',')[0]}</Typography>
-                <Box sx={{ flexGrow: 1, mx: 2, height: 24, backgroundColor: '#E0E0E0', border: '2px solid #000', position: 'relative' }}>
-                  <Box 
-                    sx={{ 
-                      width: `${Math.min((record.total_hours || 0) / 9 * 100, 100)}%`, 
-                      height: '100%', 
-                      backgroundColor: record.status === 'present' ? '#4CAF50' : '#FFD54F', 
-                      borderRight: (record.total_hours > 0) ? '2px solid #000' : 'none' 
-                    }} 
-                  />
-                  <Typography sx={{ position: 'absolute', top: 2, left: 10, fontSize: '0.75rem', fontWeight: 800, color: '#000' }}>
-                    {record.total_hours ? `${record.total_hours.toFixed(1)}h` : record.status}
-                  </Typography>
-                </Box>
-              </Box>
-            ))}
-            
-            {attendanceHistory.length === 0 && (
-              <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary', textAlign: 'center', mt: 4 }}>
-                No recent activity to display.
-              </Typography>
-            )}
-          </Paper>
-        </Grid>
-      </Grid>
-
-
-
-      {/* --- Tab Navigation --- */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-        <Tabs
-          value={tabValue}
-          onChange={handleTabChange}
-          aria-label="attendance views"
-        >
-          <Tab
-            icon={<ViewListIcon />}
-            label="List View"
-            iconPosition="start"
-            id="attendance-tab-0"
-            aria-controls="attendance-tabpanel-0"
-          />
-          <Tab
-            icon={<CalendarMonthIcon />}
-            label="Calendar View"
-            iconPosition="start"
-            id="attendance-tab-1"
-            aria-controls="attendance-tabpanel-1"
-          />
-        </Tabs>
+          )}
+          <Button variant="contained" disabled={clockedIn || busy || statusLoading} onClick={() => clock('in')} sx={{ fontWeight: 800, border: '2px solid #000' }}>Clock in</Button>
+          <Button
+            variant="contained" disabled={!clockedIn || busy || statusLoading} onClick={() => clock('out')}
+            sx={{ fontWeight: 800, border: '2px solid #000', bgcolor: '#FF5252', color: '#000', '&:hover': { bgcolor: '#FF1744' } }}
+          >
+            Clock out
+          </Button>
+        </Paper>
       </Box>
 
-      {/* --- List View Tab --- */}
-      <TabPanel value={tabValue} index={0}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h5" gutterBottom>
-            My Attendance History
-          </Typography>
+      <Tabs value={tab} onChange={(e, v) => setTab(v)} aria-label="attendance views" sx={{ borderBottom: 1, borderColor: 'divider', mb: 1.5, minHeight: 40, '& .MuiTab-root': { minHeight: 40 } }}>
+        <Tab value="calendar" icon={<CalendarMonthIcon />} iconPosition="start" label="My calendar" />
+        <Tab value="history" icon={<ViewListIcon />} iconPosition="start" label="My history" />
+        {canSeeOthers && <Tab value="everyone" icon={<GroupsIcon />} iconPosition="start" label={isAdmin ? 'Everyone' : 'My team'} />}
+      </Tabs>
 
+      {tab === 'calendar' && <MonthCalendar key={refresh} />}
+
+      {tab === 'history' && (
+        <Paper sx={{ p: 2 }}>
           {historyLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
-              <CircularProgress />
-            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 3 }}><CircularProgress /></Box>
           ) : historyError ? (
-            <Alert severity="error" sx={{ mt: 2 }}>{historyError}</Alert>
-          ) : attendanceHistory.length === 0 ? (
-            <Alert severity="info" sx={{ mt: 2 }}>No attendance records found.</Alert>
+            <Alert severity="error">{historyError}</Alert>
+          ) : history.length === 0 ? (
+            <Alert severity="info">No attendance records found.</Alert>
           ) : (
             <>
               <TableContainer>
@@ -362,39 +143,21 @@ const Attendance = () => {
                     <TableRow>
                       <TableCell>Date</TableCell>
                       <TableCell align="center">Status</TableCell>
-                      <TableCell align="right">Clock In</TableCell>
-                      <TableCell align="right">Clock Out</TableCell>
+                      <TableCell align="right">Clock in</TableCell>
+                      <TableCell align="right">Clock out</TableCell>
                       <TableCell align="right">Hours</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {attendanceHistory.map((row) => (
+                    {history.map((row) => (
                       <TableRow hover key={row._id || row.date}>
-                        <TableCell component="th" scope="row">
-                          {formatDate(row.date)}
-                        </TableCell>
-                        <TableCell align="center">{getStatusChip(row.status)}</TableCell>
+                        <TableCell>{formatDate(row.date)}</TableCell>
+                        <TableCell align="center">{statusChip(row.status)}</TableCell>
                         <TableCell align="right">
-                          {row.logs && row.logs.length > 0 ? (
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                              {row.logs.map((log, i) => (
-                                <Typography key={i} variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
-                                  {formatTime(log.clock_in)}
-                                </Typography>
-                              ))}
-                            </Box>
-                          ) : formatTime(row.clock_in)}
+                          {(row.logs?.length ? row.logs : [{ clock_in: row.clock_in }]).map((log, i) => <Typography key={i} variant="body2" sx={{ fontWeight: 600 }}>{formatTime(log.clock_in, '--:--')}</Typography>)}
                         </TableCell>
                         <TableCell align="right">
-                          {row.logs && row.logs.length > 0 ? (
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                              {row.logs.map((log, i) => (
-                                <Typography key={i} variant="caption" sx={{ fontWeight: 600, display: 'block' }}>
-                                  {log.clock_out ? formatTime(log.clock_out) : '--:--'}
-                                </Typography>
-                              ))}
-                            </Box>
-                          ) : formatTime(row.clock_out)}
+                          {(row.logs?.length ? row.logs : [{ clock_out: row.clock_out }]).map((log, i) => <Typography key={i} variant="body2" sx={{ fontWeight: 600 }}>{formatTime(log.clock_out, '--:--')}</Typography>)}
                         </TableCell>
                         <TableCell align="right">{row.total_hours?.toFixed(2) ?? '--'}</TableCell>
                       </TableRow>
@@ -403,25 +166,28 @@ const Attendance = () => {
                 </Table>
               </TableContainer>
               <TablePagination
-                component="div"
-                count={totalRecords}
-                page={page}
-                onPageChange={handleChangePage}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={handleChangeRowsPerPage}
+                component="div" count={total} page={page} onPageChange={(e, p) => setPage(p)}
+                rowsPerPage={rowsPerPage} onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
                 rowsPerPageOptions={[5, 10, 25, 50]}
               />
             </>
           )}
         </Paper>
-      </TabPanel>
+      )}
 
-      {/* --- Calendar View Tab --- */}
-      <TabPanel value={tabValue} index={1}>
-        <AttendanceCalendar />
-      </TabPanel>
+      {tab === 'everyone' && canSeeOthers && <AttendanceOverview canEditHours={isAdmin} onOpenPerson={setPerson} />}
+
+      <Dialog open={!!person} onClose={() => setPerson(null)} fullWidth maxWidth="lg">
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', fontWeight: 900 }}>
+          Attendance calendar
+          <IconButton aria-label="Close" onClick={() => setPerson(null)} sx={{ ml: 'auto' }}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {person && <MonthCalendar employeeId={person.employee_id} canEditHours={isAdmin} />}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };
 
-export default Attendance; 
+export default Attendance;

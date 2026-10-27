@@ -11,9 +11,12 @@ import AddIcon from '@mui/icons-material/Add';
 import CommentIcon from '@mui/icons-material/Comment';
 import helpdeskService from '../../services/helpdeskService';
 import { useSnackbar } from 'notistack';
+import authService from '../../services/authService';
+import { formatDate } from '../../utils/format';
 
 const Helpdesk = () => {
     const [tickets, setTickets] = useState([]);
+    const me = authService.getCurrentUser();
     const [loading, setLoading] = useState(true);
     const [openDialog, setOpenDialog] = useState(false);
     const [openCommentDialog, setOpenCommentDialog] = useState(false);
@@ -82,6 +85,8 @@ const Helpdesk = () => {
         }
     };
 
+    const showWho = tickets.some((t) => t.employee_name && t.employee_id !== me?.employee_id);
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
@@ -111,6 +116,7 @@ const Helpdesk = () => {
                             <TableHead>
                                 <TableRow sx={{ bgcolor: 'action.hover' }}>
                                     <TableCell sx={{ fontWeight: 'bold' }}>Subject</TableCell>
+                                    {showWho && <TableCell sx={{ fontWeight: 'bold' }}>Raised by</TableCell>}
                                     <TableCell sx={{ fontWeight: 'bold' }}>Category</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>Priority</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
@@ -121,14 +127,15 @@ const Helpdesk = () => {
                             <TableBody>
                                 {tickets.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                                        <TableCell colSpan={showWho ? 7 : 6} align="center" sx={{ py: 3 }}>
                                             No support tickets found. Everything is running smoothly!
                                         </TableCell>
                                     </TableRow>
                                 ) : (
                                     tickets.map((ticket) => (
                                         <TableRow key={ticket._id}>
-                                            <TableCell sx={{ fontWeight: 'bold' }}>{ticket.subject}</TableCell>
+                                            <TableCell sx={{ fontWeight: 'bold' }}>{ticket.subject || ticket.title}</TableCell>
+                                            {showWho && <TableCell>{ticket.employee_name || '-'}</TableCell>}
                                             <TableCell>{ticket.category}</TableCell>
                                             <TableCell>
                                                 <Chip
@@ -145,9 +152,10 @@ const Helpdesk = () => {
                                                     sx={{ fontWeight: 'bold', border: '2px solid #000' }}
                                                 />
                                             </TableCell>
-                                            <TableCell>{new Date(ticket.createdAt).toLocaleDateString()}</TableCell>
+                                            <TableCell>{formatDate(ticket.createdAt)}</TableCell>
                                             <TableCell>
                                                 <IconButton
+                                                    aria-label="View comments"
                                                     onClick={() => {
                                                         setSelectedTicket(ticket);
                                                         setOpenCommentDialog(true);
@@ -195,6 +203,7 @@ const Helpdesk = () => {
                         <InputLabel>Category</InputLabel>
                         <Select
                             value={newTicket.category}
+                            SelectDisplayProps={{ 'aria-label': 'Category' }}
                             label="Category"
                             onChange={(e) => setNewTicket({ ...newTicket, category: e.target.value })}
                         >
@@ -207,6 +216,7 @@ const Helpdesk = () => {
                         <InputLabel>Priority</InputLabel>
                         <Select
                             value={newTicket.priority}
+                            SelectDisplayProps={{ 'aria-label': 'Priority' }}
                             label="Priority"
                             onChange={(e) => setNewTicket({ ...newTicket, priority: e.target.value })}
                         >

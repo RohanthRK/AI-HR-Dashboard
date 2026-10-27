@@ -1,28 +1,8 @@
-import axios from 'axios';
+import { createApiClient } from './api';
 
-const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/helpdesk`;
 
-// Create axios instance with default config
-const helpdeskAPI = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+const helpdeskAPI = createApiClient('/api/helpdesk');
 
-// Add interceptor to add JWT token to every request
-helpdeskAPI.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 const helpdeskService = {
   // Get all tickets (filtered by department/role on backend)
@@ -45,15 +25,7 @@ const helpdeskService = {
     }
   },
 
-  // Get ticket by ID
-  getTicketById: async (ticketId) => {
-    try {
-      const response = await helpdeskAPI.get(`/${ticketId}/`);
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
+
 
   // Add comment to ticket
   addComment: async (ticketId, comment) => {
@@ -75,15 +47,7 @@ const helpdeskService = {
     }
   },
 
-  // Delete ticket (Admin)
-  deleteTicket: async (ticketId) => {
-    try {
-      const response = await helpdeskAPI.delete(`/${ticketId}/`);
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  }
+
 };
 
 export default helpdeskService;

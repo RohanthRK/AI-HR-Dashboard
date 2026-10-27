@@ -1,15 +1,11 @@
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom';
+// Vitest setup: jest-dom matchers and small shims for jsdom
+import '@testing-library/jest-dom/vitest';
+import React from 'react';
 import { TextEncoder, TextDecoder } from 'util';
 
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
-jest.mock('react-markdown', () => {
-  return function DummyMarkdown({ children }) {
-    return <>{children}</>;
-  };
-});
+vi.mock('react-markdown', () => ({
+  default: ({ children }) => React.createElement(React.Fragment, null, children),
+}));

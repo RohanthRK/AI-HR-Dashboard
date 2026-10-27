@@ -1,9 +1,10 @@
+import { formatDate, formatDateRange } from '../../utils/format';
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  CircularProgress, 
+import {
+  Box,
+  Typography,
+  Paper,
+  CircularProgress,
   Button,
   Table,
   TableBody,
@@ -12,7 +13,6 @@ import {
   TableHead,
   TableRow,
   Chip,
-  Grid,
   LinearProgress,
   Alert,
   Dialog,
@@ -22,8 +22,9 @@ import {
   Divider,
   Stack,
   TextField,
-  useTheme
+  useTheme,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import { Link } from 'react-router-dom';
 import leaveService from '../../services/leaveService';
 import { useSnackbar } from 'notistack';
@@ -172,8 +173,9 @@ const Leaves = () => {
   const remaining = leaveBalance?.remaining || {};
 
   const balanceCards = [
-    { type: 'Earned Leaves', used: used['Earned Leaves'] || 0, total: entitlements['Earned Leaves'] || 0, remaining: remaining['Earned Leaves'] || 0 },
-    { type: 'LOP Leaves', used: used['LOP Leaves'] || 0, total: entitlements['LOP Leaves'] || 100, remaining: remaining['LOP Leaves'] || 0 }
+    { type: 'Earned Leaves', note: 'Paid vacation', used: used['Earned Leaves'] || 0, total: entitlements['Earned Leaves'] || 0, remaining: remaining['Earned Leaves'] ?? 0 },
+    { type: 'Sick Leaves', note: 'Paid sick leave', used: used['Sick Leaves'] || 0, total: entitlements['Sick Leaves'] || 0, remaining: remaining['Sick Leaves'] ?? 0 },
+    { type: 'LOP Leaves', note: 'Unpaid, no limit', used: used['LOP Leaves'] || 0, total: null, remaining: null }
   ];
 
   return (
@@ -196,22 +198,26 @@ const Leaves = () => {
       
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {balanceCards.map((card, index) => (
-          <Grid item xs={12} md={6} key={index}>
+          <Grid item xs={12} md={4} key={index}>
             <Paper className="brutal-border brutal-shadow" sx={{ p: 3, height: '100%' }}>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 800 }}>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>
                 {card.type}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                {card.note}{card.total ? ` · ${card.total} days a year` : ''}
               </Typography>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
                 <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                   Used: {card.used} days
+                   Used: {card.used} {Number(card.used) === 1 ? 'day' : 'days'}
                 </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 700, color: card.remaining <= 0 ? 'error.main' : 'success.main' }}>
-                  Remaining: {card.remaining} days
+                <Typography variant="body2" sx={{ fontWeight: 700, color: card.remaining === null ? 'text.secondary' : card.remaining <= 0 ? 'error.main' : 'success.main' }}>
+                  {card.remaining === null ? 'Unlimited' : `Remaining: ${card.remaining} ${Number(card.remaining) === 1 ? 'day' : 'days'}`}
                 </Typography>
               </Box>
               <LinearProgress 
+                aria-label={`${card.type} used`}
                 variant="determinate" 
-                value={Math.min(100, (card.used / (card.total || 1)) * 100)} 
+                value={card.total ? Math.min(100, (card.used / card.total) * 100) : 0} 
                 color={getProgressColor(card.used, card.total)}
                 sx={{ height: 16, border: '2px solid #000', backgroundColor: theme.palette.mode === 'dark' ? '#444' : '#eee' }}
               />
@@ -222,7 +228,7 @@ const Leaves = () => {
       
       {isAdminOrManager && pendingApprovals.length > 0 && (
         <Box sx={{ mb: 6 }}>
-          <Typography variant="h5" sx={{ fontWeight: 900, mb: 2, textTransform: 'uppercase', color: 'primary.main' }}>
+          <Typography variant="h5" sx={{ fontWeight: 900, mb: 2, textTransform: 'uppercase' }}>
              Review Pending Approvals
           </Typography>
           <TableContainer component={Paper} className="brutal-border brutal-shadow" sx={{ border: '4px solid #000', bgcolor: 'background.paper' }}>
@@ -244,7 +250,7 @@ const Leaves = () => {
                       <Typography variant="caption" sx={{ fontWeight: 600 }}>{leave.department}</Typography>
                     </TableCell>
                     <TableCell sx={{ fontWeight: 700, borderBottom: '2px solid #000' }}>{leave.leave_type}</TableCell>
-                    <TableCell sx={{ borderBottom: '2px solid #000' }}>{leave.start_date} to {leave.end_date}</TableCell>
+                    <TableCell sx={{ borderBottom: '2px solid #000' }}>{formatDateRange(leave.start_date, leave.end_date)}</TableCell>
                     <TableCell sx={{ fontWeight: 800, borderBottom: '2px solid #000' }}>{leave.days}</TableCell>
                     <TableCell align="center" sx={{ borderBottom: '2px solid #000' }}>
                       <Stack direction="row" spacing={1} justifyContent="center">
@@ -314,8 +320,8 @@ const Leaves = () => {
               {leaveRequests.map((leave) => (
                 <TableRow key={leave._id} hover>
                   <TableCell sx={{ fontWeight: 700, borderBottom: '1px solid #ddd' }}>{leave.leave_type}</TableCell>
-                  <TableCell sx={{ borderBottom: '1px solid #ddd' }}>{leave.start_date}</TableCell>
-                  <TableCell sx={{ borderBottom: '1px solid #ddd' }}>{leave.end_date}</TableCell>
+                  <TableCell sx={{ borderBottom: '1px solid #ddd' }}>{formatDate(leave.start_date)}</TableCell>
+                  <TableCell sx={{ borderBottom: '1px solid #ddd' }}>{formatDate(leave.end_date)}</TableCell>
                   <TableCell sx={{ fontWeight: 800, borderBottom: '1px solid #ddd' }}>{leave.days}</TableCell>
                   <TableCell sx={{ borderBottom: '1px solid #ddd' }}>
                     <Chip 
@@ -325,7 +331,7 @@ const Leaves = () => {
                       sx={{ fontWeight: 900, border: '2px solid #000' }}
                     />
                   </TableCell>
-                  <TableCell sx={{ borderBottom: '1px solid #ddd' }}>{new Date(leave.requested_at).toLocaleDateString()}</TableCell>
+                  <TableCell sx={{ borderBottom: '1px solid #ddd' }}>{formatDate(leave.requested_at)}</TableCell>
                   <TableCell align="center" sx={{ borderBottom: '1px solid #ddd' }}>
                     <Button 
                       size="small" 
@@ -418,7 +424,7 @@ const Leaves = () => {
                 <Grid item xs={12}>
                   <Typography variant="caption" sx={{ fontWeight: 900, color: 'text.secondary' }}>PERIOD</Typography>
                   <Typography variant="body1" sx={{ fontWeight: 800 }}>
-                    {selectedLeave.start_date} to {selectedLeave.end_date}
+                    {formatDateRange(selectedLeave.start_date, selectedLeave.end_date)}
                     {selectedLeave.is_half_day && ` (Half Day: ${selectedLeave.half_day_segment})`}
                   </Typography>
                 </Grid>

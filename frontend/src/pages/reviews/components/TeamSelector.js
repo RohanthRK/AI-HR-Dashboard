@@ -1,68 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  CardHeader, 
-  CardContent, 
-  TextField, 
-  InputAdornment, 
+
+import {
+  CardHeader,
+  CardContent,
+  TextField,
+  InputAdornment,
   MenuItem,
-  Select, 
-  FormControl, 
+  Select,
+  FormControl,
   InputLabel,
-  List, 
-  ListItem, 
-  Button, 
-  Typography, 
-  Chip, 
-  Box, 
+  Button,
+  Typography,
+  Chip,
+  Box,
   Paper,
   CircularProgress,
-  Grid
+  Alert,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import SearchIcon from '@mui/icons-material/Search';
+
 import PeopleIcon from '@mui/icons-material/People';
+
 import aiService from '../../../services/aiService';
+
 import teamService from '../../../services/teamService';
+
 import employeeService from '../../../services/employeeService';
+
 import { useAuth } from '../../../contexts/AuthContext';
 
-// Mock data in case API fails
-const mockTeamsData = {
-  total_departments: 5,
-  total_teams: 8,
-  total_employees: 42,
-  departments: [
-    {
-      id: 1,
-      name: "Engineering",
-      teams: [
-        {
-          id: 101,
-          name: "Frontend",
-          employee_count: 6,
-          employees: ["John Doe", "Jane Smith", "Bob Johnson"]
-        },
-        {
-          id: 102,
-          name: "Backend",
-          employee_count: 5,
-          employees: ["Alice Brown", "Tom Wilson"]
-        }
-      ]
-    },
-    {
-      id: 2,
-      name: "Design",
-      teams: [
-        {
-          id: 201,
-          name: "UI/UX",
-          employee_count: 4,
-          employees: ["Sarah Davis", "Mike Taylor"]
-        }
-      ]
-    }
-  ]
-};
+
 
 const TeamSelector = ({ onSelectTeam }) => {
   const { currentUser } = useAuth();
@@ -263,6 +231,7 @@ const TeamSelector = ({ onSelectTeam }) => {
       />
       
       <CardContent>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Box sx={{ display: 'flex', gap: 2, mb: 4, flexDirection: { xs: 'column', md: 'row' } }}>
           <TextField
             fullWidth

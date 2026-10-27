@@ -26,12 +26,34 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-_ix-c+_y@n3=ku85t_ykwuo6zy#47u41f(gwjryvxvr$sab@8g')
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 't')
+# Secure by default: development runs set DEBUG=True in backend/.env
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise RuntimeError('SECRET_KEY must be set when DEBUG is False (it also signs the JWTs).')
+    SECRET_KEY = 'django-insecure-dev-only-key-change-me-0123456789abcdef'
+elif not DEBUG and len(SECRET_KEY) < 32:
+    raise RuntimeError('SECRET_KEY must be at least 32 characters when DEBUG is False (it also signs the JWTs).')
+
+if os.environ.get('ALLOWED_HOSTS'):
+    ALLOWED_HOSTS = [h.strip() for h in os.environ['ALLOWED_HOSTS'].split(',') if h.strip()]
+elif DEBUG:
+    ALLOWED_HOSTS = ['*']
+else:
+    raise RuntimeError('ALLOWED_HOSTS must list the host names this server answers to when DEBUG is False.')
+
+if not DEBUG:
+    # behind a TLS-terminating proxy (Render, nginx, a load balancer)
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = 'same-origin'
+    SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1', 't')
+
 
 
 # Application definition
@@ -50,11 +72,10 @@ INSTALLED_APPS = [
     'leaves',
     'reviews',
     'payroll',
-    'jobs',
     'ai_analytics',
     'notifications',
     'reports',
-    'chat',
+    'dashboard',
     'teams',
     'expenses',
     'assets',
@@ -72,11 +93,12 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'auth_app.middleware.ErrorSanitizerMiddleware',
     'auth_app.middleware.JWTAuthMiddleware',
 ]
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'True').lower() in ('true', '1', 't')
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', str(DEBUG)).lower() in ('true', '1', 't')
 CORS_ALLOWED_ORIGINS = [
     origin.strip() for origin in os.environ.get(
         'CORS_ALLOWED_ORIGINS',
@@ -172,14 +194,6 @@ JWT_EXPIRATION_DELTA = timedelta(hours=2)
 # Ensure this is loaded from environment variables in production
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', None)
 
-# Celery Configuration
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
-
 # Logging Configuration
 LOGGING = {
     'version': 1,
@@ -226,11 +240,6 @@ LOGGING = {
              'level': 'DEBUG' if DEBUG else 'INFO',
              'propagate': False,
         },
-        'celery': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        }
     },
 }
 

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+
 import {
   Box,
   Typography,
   Paper,
   Button,
   TextField,
-  Grid,
   FormControl,
   InputLabel,
   Select,
@@ -35,78 +35,102 @@ import {
   FormControlLabel,
   LinearProgress,
   Stack,
-  Alert,
-  Divider
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import Visibility from '@mui/icons-material/Visibility';
+
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
+
 import EditIcon from '@mui/icons-material/Edit';
+
 import DeleteIcon from '@mui/icons-material/Delete';
+
 import LockResetIcon from '@mui/icons-material/LockReset';
+
 import AutorenewIcon from '@mui/icons-material/Autorenew';
+
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+
 import SearchIcon from '@mui/icons-material/Search';
+
 import SecurityIcon from '@mui/icons-material/Security';
+
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+
 import WorkIcon from '@mui/icons-material/Work';
+
 import EmailIcon from '@mui/icons-material/Email';
+
 import PhoneIcon from '@mui/icons-material/Phone';
+
 import KeyIcon from '@mui/icons-material/Key';
+
 import RefreshIcon from '@mui/icons-material/Refresh';
+
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+
 import AddIcon from '@mui/icons-material/Add';
+
 import GroupIcon from '@mui/icons-material/Group';
+
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+
 import CheckIcon from '@mui/icons-material/Check';
+
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+
 import LinkIcon from '@mui/icons-material/Link';
+
 import PersonIcon from '@mui/icons-material/Person';
-import BusinessIcon from '@mui/icons-material/Business';
+
 import authService from '../../services/authService';
+
 import employeeService from '../../services/employeeService';
+
 import teamService from '../../services/teamService';
+
+import api from '../../services/api';
+
 import { useSnackbar } from 'notistack';
 
-// Standard Department Options
-const DEFAULT_DEPARTMENTS = [
-  'Engineering',
-  'Human Resources',
-  'Marketing',
-  'Sales',
-  'Finance',
-  'Product Design',
-  'Operations',
-  'Customer Success',
-  'Legal'
-];
+
+// The company's e-mail domain (taken from the signed-in HR user) for suggesting work addresses
+const companyDomain = () => {
+  try {
+    const mail = JSON.parse(localStorage.getItem('user') || '{}').email || '';
+    return mail.includes('@') ? mail.split('@')[1] : 'company.com';
+  } catch (e) {
+    return 'company.com';
+  }
+};
 
 const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Intern'];
 
-// Generate strong random password
+// Generate a strong random password (the browser's secure random source, not Math.random)
+const secureInt = (max) => {
+  const buffer = new Uint32Array(1);
+  const limit = Math.floor(0x100000000 / max) * max;      // avoid modulo bias
+  do { window.crypto.getRandomValues(buffer); } while (buffer[0] >= limit);
+  return buffer[0] % max;
+};
+
 const generatePassword = (length = 12) => {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const lower = 'abcdefghijkmnopqrstuvwxyz';
   const numbers = '23456789';
   const symbols = '!@#$%^&*';
   const all = upper + lower + numbers + symbols;
+  const pick = (set) => set[secureInt(set.length)];
 
-  let pwd = '';
-  pwd += upper[Math.floor(Math.random() * upper.length)];
-  pwd += lower[Math.floor(Math.random() * lower.length)];
-  pwd += numbers[Math.floor(Math.random() * numbers.length)];
-  pwd += symbols[Math.floor(Math.random() * symbols.length)];
-
-  for (let i = 4; i < length; i++) {
-    pwd += all[Math.floor(Math.random() * all.length)];
+  const chars = [pick(upper), pick(lower), pick(numbers), pick(symbols)];
+  while (chars.length < length) chars.push(pick(all));
+  for (let i = chars.length - 1; i > 0; i--) {              // Fisher-Yates shuffle
+    const j = secureInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
   }
-
-  return pwd.split('').sort(() => 0.5 - Math.random()).join('');
-};
-
-// Auto-generate employee ID
-const generateEmployeeId = () => {
-  return `EMP-${Math.floor(1000 + Math.random() * 9000)}`;
+  return chars.join('');
 };
 
 // Password strength calculation
@@ -132,33 +156,42 @@ const getPasswordStrength = (password) => {
   }
 };
 
+const blankEmployeeForm = () => ({
+  first_name: '',
+  last_name: '',
+  email: '',
+  personal_email: '',
+  phone: '',
+  employee_id: '',
+  department: '',
+  team: '',
+  manager: null,
+  position: '',
+  employment_type: 'Full-time',
+  hire_date: new Date().toISOString().split('T')[0],
+  date_of_birth: '',
+  gender: '',
+  location: '',
+  address: '',
+  salary: '',
+  tax_id: '',
+  username: '',
+  password: generatePassword(12),
+  role_id: '',
+  active: true,
+});
+
 const Signup = () => {
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const { enqueueSnackbar } = useSnackbar();
 
   // Page View Mode: 'list' (Directory Table) | 'create' (Add New Employee & Account Page) | 'link' (Link Existing Employee Page)
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState(() => (new URLSearchParams(window.location.search).get('new') ? 'create' : 'list'));
 
   // Form State - Mode 1 (New Employee & Account)
-  const [newEmployeeForm, setNewEmployeeForm] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    personal_email: '',
-    phone: '',
-    employee_id: generateEmployeeId(),
-    department: 'Engineering',
-    position: 'Software Engineer',
-    employment_type: 'Full-time',
-    hire_date: new Date().toISOString().split('T')[0],
-    gender: 'Prefer not to say',
-    location: '',
-    username: '',
-    password: generatePassword(12),
-    role_id: '',
-    active: true,
-  });
+  const [newEmployeeForm, setNewEmployeeForm] = useState(blankEmployeeForm);
+  const [teamsList, setTeamsList] = useState([]);
 
   // Form State - Mode 2 (Link Existing Employee)
   const [linkForm, setLinkForm] = useState({
@@ -174,7 +207,7 @@ const Signup = () => {
   const [roles, setRoles] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [users, setUsers] = useState([]);
-  const [departmentsList, setDepartmentsList] = useState(DEFAULT_DEPARTMENTS);
+  const [departmentsList, setDepartmentsList] = useState([]);
 
   // Loading States
   const [loading, setLoading] = useState(false);
@@ -253,13 +286,12 @@ const Signup = () => {
   };
 
   const fetchDepartments = async () => {
+    api.get('/api/teams/mongodb_list/').then((r) => setTeamsList(Array.isArray(r.data) ? r.data : [])).catch(() => {});
     try {
       const data = await teamService.getAllDepartments();
       if (data?.departments && Array.isArray(data.departments)) {
         const names = data.departments.map(d => d.name || d.department).filter(Boolean);
-        if (names.length > 0) {
-          setDepartmentsList(Array.from(new Set([...DEFAULT_DEPARTMENTS, ...names])));
-        }
+        setDepartmentsList(Array.from(new Set(names)));
       }
     } catch (error) {
       // Graceful fallback
@@ -304,12 +336,12 @@ const Signup = () => {
       if (field === 'first_name' || field === 'last_name') {
         const first = field === 'first_name' ? value : prev.first_name;
         const last = field === 'last_name' ? value : prev.last_name;
-        if ((first || last) && (!prev.email || prev.email.includes('@company.com'))) {
+        if ((first || last) && (!prev.email || prev.email.endsWith(`@${companyDomain()}`))) {
           const sanitized = `${first?.toLowerCase() || ''}.${last?.toLowerCase() || ''}`
             .replace(/[^a-z0-9.]/g, '')
             .replace(/^\.|\.$/g, '');
           if (sanitized) {
-            updated.email = `${sanitized}@company.com`;
+            updated.email = `${sanitized}@${companyDomain()}`;
           }
         }
       }
@@ -334,8 +366,16 @@ const Signup = () => {
       enqueueSnackbar('Username is required.', { variant: 'warning' });
       return;
     }
-    if (!newEmployeeForm.password || newEmployeeForm.password.length < 6) {
-      enqueueSnackbar('Password must be at least 6 characters.', { variant: 'warning' });
+    if (!newEmployeeForm.password || newEmployeeForm.password.length < 8) {
+      enqueueSnackbar('Password must be at least 8 characters.', { variant: 'warning' });
+      return;
+    }
+    if (!newEmployeeForm.department) {
+      enqueueSnackbar('Please choose a department.', { variant: 'warning' });
+      return;
+    }
+    if (newEmployeeForm.tax_id && !/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(newEmployeeForm.tax_id.trim())) {
+      enqueueSnackbar('PAN must look like ABCDE1234F.', { variant: 'warning' });
       return;
     }
     if (!newEmployeeForm.role_id) {
@@ -352,20 +392,26 @@ const Signup = () => {
         email: newEmployeeForm.email.trim(),
         personal_email: newEmployeeForm.personal_email?.trim() || '',
         phone: newEmployeeForm.phone.trim(),
-        employee_id: newEmployeeForm.employee_id.trim() || generateEmployeeId(),
+        employee_id: newEmployeeForm.employee_id.trim(),
         department: newEmployeeForm.department,
-        position: newEmployeeForm.position,
+        team: newEmployeeForm.team,
+        position: newEmployeeForm.position.trim(),
         employment_type: newEmployeeForm.employment_type,
         hire_date: newEmployeeForm.hire_date,
         gender: newEmployeeForm.gender,
-        location: newEmployeeForm.location,
-        address: newEmployeeForm.location,
+        date_of_birth: newEmployeeForm.date_of_birth,
+        location: newEmployeeForm.location.trim(),
+        address: newEmployeeForm.address.trim(),
+        tax_id: newEmployeeForm.tax_id.trim().toUpperCase(),
         employment_status: newEmployeeForm.active ? 'Active' : 'Inactive',
         status: newEmployeeForm.active ? 'Active' : 'Inactive',
       };
+      if (newEmployeeForm.salary !== '') employeePayload.salary = Number(newEmployeeForm.salary);
+      if (newEmployeeForm.manager) employeePayload.manager_id = newEmployeeForm.manager._id || newEmployeeForm.manager.id;
 
       const employeeResult = await employeeService.createEmployee(employeePayload);
-      const createdEmployeeId = employeeResult?.id || employeeResult?._id || employeePayload.employee_id;
+      const createdEmployeeId = employeeResult?.id || employeeResult?._id;
+      const createdCode = employeeResult?.employee_id || employeePayload.employee_id;
 
       // Step 2: Create System User Account & Link
       const userPayload = {
@@ -386,7 +432,7 @@ const Signup = () => {
       setSuccessReceipt({
         title: 'Employee & User Account Provisioned Successfully!',
         name: `${newEmployeeForm.first_name} ${newEmployeeForm.last_name}`,
-        employee_id: employeePayload.employee_id,
+        employee_id: createdCode,
         email: newEmployeeForm.email,
         username: newEmployeeForm.username,
         password: newEmployeeForm.password,
@@ -399,24 +445,7 @@ const Signup = () => {
 
       // Reset form
       const defaultRole = roles.find(r => r.name?.toLowerCase() === 'employee') || roles[0];
-      setNewEmployeeForm({
-        first_name: '',
-        last_name: '',
-        email: '',
-        personal_email: '',
-        phone: '',
-        employee_id: generateEmployeeId(),
-        department: 'Engineering',
-        position: 'Software Engineer',
-        employment_type: 'Full-time',
-        hire_date: new Date().toISOString().split('T')[0],
-        gender: 'Prefer not to say',
-        location: '',
-        username: '',
-        password: generatePassword(12),
-        role_id: defaultRole ? defaultRole._id : '',
-        active: true,
-      });
+      setNewEmployeeForm({ ...blankEmployeeForm(), role_id: defaultRole ? defaultRole._id : '' });
 
       // Switch back to directory table
       setViewMode('list');
@@ -693,7 +722,7 @@ const Signup = () => {
                         <TextField
                           fullWidth
                           required
-                          label="First Name *"
+                          label="First Name"
                           placeholder="e.g. Sarah"
                           value={newEmployeeForm.first_name}
                           onChange={(e) => handleNewEmployeeChange('first_name', e.target.value)}
@@ -703,7 +732,7 @@ const Signup = () => {
                         <TextField
                           fullWidth
                           required
-                          label="Last Name *"
+                          label="Last Name"
                           placeholder="e.g. Connor"
                           value={newEmployeeForm.last_name}
                           onChange={(e) => handleNewEmployeeChange('last_name', e.target.value)}
@@ -714,8 +743,8 @@ const Signup = () => {
                           fullWidth
                           required
                           type="email"
-                          label="Work Email Address *"
-                          placeholder="sarah.connor@company.com"
+                          label="Work Email Address"
+                          placeholder={`name@${companyDomain()}`}
                           value={newEmployeeForm.email}
                           onChange={(e) => handleNewEmployeeChange('email', e.target.value)}
                           InputProps={{
@@ -730,31 +759,19 @@ const Signup = () => {
                       <Grid item xs={12} sm={6}>
                         <TextField
                           fullWidth
-                          label="Employee ID Code *"
+                          label="Employee ID"
+                          placeholder="Leave blank to assign the next number"
+                          helperText="Automatically assigned (EMP-nnnn) when left blank"
                           value={newEmployeeForm.employee_id}
                           onChange={(e) => handleNewEmployeeChange('employee_id', e.target.value)}
-                          InputProps={{
-                            endAdornment: (
-                              <InputAdornment position="end">
-                                <Tooltip title="Generate New ID">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleNewEmployeeChange('employee_id', generateEmployeeId())}
-                                  >
-                                    <AutorenewIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </InputAdornment>
-                            ),
-                            sx: { fontFamily: 'monospace', fontWeight: 800 }
-                          }}
+                          InputProps={{ sx: { fontFamily: 'monospace', fontWeight: 800 } }}
                         />
                       </Grid>
                       <Grid item xs={12} sm={6}>
                         <TextField
                           fullWidth
                           label="Phone Number"
-                          placeholder="+1 (555) 019-2834"
+                          placeholder="+91 98450 12345"
                           value={newEmployeeForm.phone}
                           onChange={(e) => handleNewEmployeeChange('phone', e.target.value)}
                           InputProps={{
@@ -769,10 +786,39 @@ const Signup = () => {
                       <Grid item xs={12} sm={6}>
                         <TextField
                           fullWidth
-                          label="Location / Office Address"
-                          placeholder="Headquarters (Building A) or Remote"
+                          label="Work location"
+                          placeholder="Bengaluru office, Pune office or Remote"
                           value={newEmployeeForm.location}
                           onChange={(e) => handleNewEmployeeChange('location', e.target.value)}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          type="date"
+                          label="Date of birth"
+                          value={newEmployeeForm.date_of_birth}
+                          onChange={(e) => handleNewEmployeeChange('date_of_birth', e.target.value)}
+                          InputLabelProps={{ shrink: true }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth>
+                          <InputLabel>Gender</InputLabel>
+                          <Select value={newEmployeeForm.gender} label="Gender" onChange={(e) => handleNewEmployeeChange('gender', e.target.value)}>
+                            {['Female', 'Male', 'Non-binary', 'Prefer not to say'].map((g) => <MenuItem key={g} value={g}>{g}</MenuItem>)}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12}>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={2}
+                          label="Residential address"
+                          placeholder="House / flat, street, city, state, PIN code"
+                          value={newEmployeeForm.address}
+                          onChange={(e) => handleNewEmployeeChange('address', e.target.value)}
                         />
                       </Grid>
                     </Grid>
@@ -796,7 +842,7 @@ const Signup = () => {
                           <Select
                             value={newEmployeeForm.department}
                             label="Department"
-                            onChange={(e) => handleNewEmployeeChange('department', e.target.value)}
+                            onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, department: e.target.value, team: '' }))}
                           >
                             {departmentsList.map(dept => (
                               <MenuItem key={dept} value={dept}>{dept}</MenuItem>
@@ -811,6 +857,47 @@ const Signup = () => {
                           placeholder="e.g. Senior Software Engineer"
                           value={newEmployeeForm.position}
                           onChange={(e) => handleNewEmployeeChange('position', e.target.value)}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth disabled={!newEmployeeForm.department}>
+                          <InputLabel>Team</InputLabel>
+                          <Select value={newEmployeeForm.team} label="Team" onChange={(e) => handleNewEmployeeChange('team', e.target.value)}>
+                            <MenuItem value=""><em>No team yet</em></MenuItem>
+                            {teamsList.filter((t) => t.department === newEmployeeForm.department).map((t) => <MenuItem key={t._id || t.id} value={t.name}>{t.name}</MenuItem>)}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Autocomplete
+                          options={employees.filter((e) => (e.status || 'Active') === 'Active')}
+                          value={newEmployeeForm.manager}
+                          onChange={(e, v) => handleNewEmployeeChange('manager', v)}
+                          getOptionLabel={(e) => `${e.name || `${e.first_name} ${e.last_name}`} (${e.employee_id})`}
+                          isOptionEqualToValue={(a, b) => a._id === b._id}
+                          renderInput={(params) => <TextField {...params} label="Reports to" placeholder="Search for the manager" />}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          type="number"
+                          label="Annual CTC (₹)"
+                          placeholder="e.g. 1200000"
+                          inputProps={{ min: 0 }}
+                          helperText={newEmployeeForm.salary ? `${Number(newEmployeeForm.salary).toLocaleString('en-IN')} per year` : 'Cost to company per year'}
+                          value={newEmployeeForm.salary}
+                          onChange={(e) => handleNewEmployeeChange('salary', e.target.value)}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="PAN (optional)"
+                          placeholder="ABCDE1234F"
+                          inputProps={{ maxLength: 10, style: { textTransform: 'uppercase' } }}
+                          value={newEmployeeForm.tax_id}
+                          onChange={(e) => handleNewEmployeeChange('tax_id', e.target.value.toUpperCase())}
                         />
                       </Grid>
                       <Grid item xs={12} sm={6}>
@@ -856,7 +943,7 @@ const Signup = () => {
                         <TextField
                           fullWidth
                           required
-                          label="System Username *"
+                          label="System Username"
                           placeholder="sarah.connor"
                           value={newEmployeeForm.username}
                           onChange={(e) => handleNewEmployeeChange('username', e.target.value)}
@@ -877,7 +964,7 @@ const Signup = () => {
                           <InputLabel>Assign System Role *</InputLabel>
                           <Select
                             value={newEmployeeForm.role_id}
-                            label="Assign System Role *"
+                            label="Assign System Role"
                             onChange={(e) => handleNewEmployeeChange('role_id', e.target.value)}
                           >
                             {roles.map((role) => (
@@ -911,7 +998,7 @@ const Signup = () => {
                         <TextField
                           fullWidth
                           required
-                          label="Temporary Password *"
+                          label="Temporary Password"
                           type={showPassword ? 'text' : 'password'}
                           value={newEmployeeForm.password}
                           onChange={(e) => handleNewEmployeeChange('password', e.target.value)}

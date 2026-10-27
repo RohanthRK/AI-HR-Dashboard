@@ -1,9 +1,11 @@
+import { formatDate } from '../../utils/format';
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  CircularProgress, 
+
+import {
+  Box,
+  Typography,
+  Paper,
+  CircularProgress,
   Button,
   Table,
   TableBody,
@@ -14,27 +16,30 @@ import {
   Rating,
   Chip,
   Alert,
-  AlertTitle,
   Container,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Grid,
   Divider,
   List,
   ListItem,
   ListItemText,
   TextField,
-  InputAdornment
+  InputAdornment,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import PageHeader from '../../components/PageHeader';
+import SharedReviews from '../../components/reviews/SharedReviews';
+
 import reviewService from '../../services/reviewService';
+
 import { useAuth } from '../../contexts/AuthContext';
-import PersonIcon from '@mui/icons-material/Person';
-import StarIcon from '@mui/icons-material/Star';
+
 import SearchIcon from '@mui/icons-material/Search';
+
 import AssessmentIcon from '@mui/icons-material/Assessment';
+
 
 const MyPerformanceReports = ({ isComponent = false }) => {
   const { currentUser } = useAuth();
@@ -134,6 +139,8 @@ const MyPerformanceReports = ({ isComponent = false }) => {
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
+      <SharedReviews />
+
       {filteredReviews.length === 0 ? (
         <Paper sx={{ p: 6, textAlign: 'center', border: '4px solid #000' }}>
           <AssessmentIcon sx={{ fontSize: 60, mb: 2, color: 'text.disabled' }} />
@@ -178,7 +185,7 @@ const MyPerformanceReports = ({ isComponent = false }) => {
                       <TableCell sx={{ fontWeight: 700 }}>{review.reviewer_name || review.reviewer || 'HR Manager'}</TableCell>
                       <TableCell>{review.period || 'Annual Review'}</TableCell>
                       <TableCell>
-                        {review.review_date || review.submission_date || review.created_at ? new Date(review.review_date || review.submission_date || review.created_at).toLocaleDateString() : '—'}
+                        {review.review_date || review.submission_date || review.created_at ? formatDate(review.review_date || review.submission_date || review.created_at) : '—'}
                       </TableCell>
                       <TableCell>
                         {score !== null ? (

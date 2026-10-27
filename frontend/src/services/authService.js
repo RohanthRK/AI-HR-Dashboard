@@ -1,16 +1,8 @@
-import axios from 'axios';
+import { createApiClient } from './api';
 
-const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/auth`;
 
-// Create axios instance with default config
-const authAPI = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+const authAPI = createApiClient('/api/auth');
 
-// No authentication interceptors needed
 
 // Service functions for authentication
 const authService = {
@@ -81,23 +73,7 @@ const authService = {
     return user && (user.role === 'Manager' || user.role === 'manager' || user.role === 'Admin' || user.role === 'admin');
   },
 
-  // Get permissions for current user
-  getMyPermissions: async () => {
-    try {
-      const response = await authAPI.get('/my-permissions/', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.data;
-    } catch (error) {
-      // Fallback for missing endpoint
-      return { 
-        permissions: [
-          'view_dashboard', 'view_employees', 'view_attendance', 
-          'view_leaves', 'view_payroll', 'view_teams'
-        ]
-      };
-    }
-  },
+
 
   // Get user roles from API
   getRoles: async () => {
@@ -111,16 +87,7 @@ const authService = {
     }
   },
 
-  createRole: async (roleData) => {
-    try {
-      const response = await authAPI.post('/roles/', roleData, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
+
 
   updateRole: async (roleId, roleData) => {
     try {
@@ -133,16 +100,7 @@ const authService = {
     }
   },
 
-  deleteRole: async (roleId) => {
-    try {
-      const response = await authAPI.delete(`/roles/${roleId}/`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
+
 
   changePassword: async (passwordData) => {
     try {
@@ -155,23 +113,9 @@ const authService = {
     }
   },
 
-  requestPasswordReset: async (email) => {
-    try {
-      const response = await authAPI.post('/request-password-reset/', { email });
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
 
-  resetPassword: async (token, newPassword) => {
-    try {
-      const response = await authAPI.post('/reset-password/', { token, newPassword });
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
+
+
 
   // User Management (Admin only)
   getUsers: async () => {

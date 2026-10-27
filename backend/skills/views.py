@@ -5,8 +5,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from bson import ObjectId
-import json
-from hr_backend.db import db, employees as employees_collection, skills as skills_collection
+from hr_backend.db import employees as employees_collection, skills as skills_collection
+from utils.auth_utils import is_privileged, owns_employee
 
 DEFAULT_MASTER_SKILLS = [
     {"name": "JavaScript", "category": "Frontend", "proficiency": 8},
@@ -73,7 +73,7 @@ def list_items(request):
             except Exception:
                 skills_list = DEFAULT_MASTER_SKILLS
         return JsonResponse({"skills": skills_list})
-    except Exception as e:
+    except Exception:
         return JsonResponse({"skills": DEFAULT_MASTER_SKILLS})
 
 @api_view(['GET'])
@@ -119,8 +119,10 @@ def get_employee_skills(request, employee_id):
 @api_view(['POST', 'PUT'])
 def update_employee_skills(request, employee_id):
     """
-    Update skills for a specific employee
+    Update skills for a specific employee (the employee themself, or Admin/Manager/HR)
     """
+    if not is_privileged(request) and not owns_employee(request, employee_id):
+        return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
     try:
         skills = request.data.get('skills', [])
         

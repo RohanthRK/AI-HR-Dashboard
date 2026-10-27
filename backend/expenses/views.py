@@ -4,6 +4,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from hr_backend.db import db
 from bson import ObjectId
+from utils.notify import notify, notify_staff, user_id_for_employee
+from payroll.engine import inr
+from utils.auth_utils import is_privileged, is_admin, forbidden, can_see_employee, scope_query
+from utils.hr_common import employee_names
 
 # Ensure collections exist
 expenses_collection = db["expenses"]
@@ -17,12 +21,12 @@ def handle_expenses(request):
     # Extract user info from request (attached by JWTAuthMiddleware)
     user_id = getattr(request, 'user_id', None)
     employee_id = getattr(request, 'employee_id', None)
-    user_role = getattr(request, 'role', '').lower()
+    getattr(request, 'role', '').lower()
 
     if request.method == 'GET':
         query = {}
-        # Privacy filter: Only Admins can see all expenses
-        if user_role != 'admin':
+        # Privacy filter: Admin / Manager / HR see everything, others only their own
+        if not is_privileged(request):
             if employee_id:
                 query['employee_id'] = employee_id
             elif user_id:
@@ -31,29 +35,57 @@ def handle_expenses(request):
                 # If no ID, return empty to be safe
                 return JsonResponse({'success': True, 'expenses': []})
 
+        if is_privileged(request) and not is_admin(request):       # a manager sees their own and their reports' claims
+            query = scope_query(request, 'employee_id')
         expenses = list(expenses_collection.find(query))
         # Convert ObjectId to string
+        names = employee_names()
         for exp in expenses:
             exp['_id'] = str(exp['_id'])
+            exp.setdefault('title', exp.get('description', ''))
+            exp['employee_name'] = names.get(str(exp.get('employee_id')), '')
+        expenses.sort(key=lambda e: str(e.get('submittedAt', '')), reverse=True)
         return JsonResponse({'success': True, 'expenses': expenses})
         
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            try:
+                amount = round(float(data.get('amount')), 2)
+            except (TypeError, ValueError):
+                return JsonResponse({'success': False, 'error': 'Amount must be a number'}, status=400)
+            if not 0 < amount <= 1000000:
+                return JsonResponse({'success': False, 'error': 'Amount must be between ₹0.01 and ₹10,00,000'}, status=400)
+            data['amount'] = amount
+            data['title'] = str(data.get('title') or data.get('description') or '').strip()[:120]
+            if not data['title']:
+                return JsonResponse({'success': False, 'error': 'A title or description is required'}, status=400)
+            data['description'] = str(data.get('description') or '').strip()[:1000]
             # Automatic ownership tagging
             if employee_id:
                 data['employee_id'] = employee_id
             if user_id:
                 data['user_id'] = user_id
                 
-            # Default status
-            data['status'] = data.get('status', 'Pending')
+            # New claims always start as Pending; ownership comes from the token, never the body
+            data['status'] = 'Pending'
+            if not employee_id and not user_id:
+                return JsonResponse({'success': False, 'error': 'Account is not linked to an employee'}, status=400)
             data['submittedAt'] = datetime.utcnow().isoformat()
             data['comments'] = []
             
             result = expenses_collection.insert_one(data)
             data['_id'] = str(result.inserted_id)
-            
+
+            # tell the people who approve it: HR, and the employee's manager
+            who = employee_names().get(str(employee_id), 'An employee')
+            text = f"{who} submitted a {data.get('category') or 'expense'} claim of {inr(amount, '₹')}: {data['title']}"
+            notify_staff('Expense claim to approve', text, type='expense_update', link='/expenses')
+            boss = (db['Employees'].find_one({'_id': ObjectId(str(employee_id))}) or {}).get('manager_id') if ObjectId.is_valid(str(employee_id)) else None
+            boss_user = user_id_for_employee(boss) if boss else None
+            if boss_user:
+                notify(boss_user, 'Expense claim to approve', text, type='expense_update', reference_id=str(result.inserted_id))
+
             return JsonResponse({'success': True, 'expense': data}, status=201)
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
@@ -79,8 +111,14 @@ def handle_expense_detail(request, expense_id):
     expense = expenses_collection.find_one({'_id': obj_id})
     if not expense:
         return JsonResponse({'success': False, 'error': 'Expense not found'}, status=404)
+    if is_privileged(request) and not can_see_employee(request, expense.get('employee_id')):
+        return forbidden()
 
     if request.method == 'GET':
+        is_owner = (employee_id and str(expense.get('employee_id')) == str(employee_id)) or \
+                   (user_id and str(expense.get('user_id')) == str(user_id))
+        if not is_privileged(request) and not is_owner:
+            return forbidden()
         expense['_id'] = str(expense['_id'])
         return JsonResponse({'success': True, 'expense': expense})
 
@@ -112,6 +150,10 @@ def handle_expense_detail(request, expense_id):
             else:
                 # Regular update
                 if 'status' in data:
+                    own_claim = (employee_id and str(expense.get('employee_id')) == str(employee_id)) or \
+                                (user_id and str(expense.get('user_id')) == str(user_id))
+                    if own_claim:
+                        return JsonResponse({'success': False, 'error': 'You cannot approve or reject your own claim.'}, status=403)
                     if user_role not in ['admin', 'manager']:
                         return JsonResponse({
                             'success': False,
@@ -143,6 +185,15 @@ def handle_expense_detail(request, expense_id):
                     {'_id': obj_id},
                     update_ops
                 )
+
+                if new_status and new_status != old_status:
+                    notify(
+                        expense.get('user_id') or user_id_for_employee(expense.get('employee_id')),
+                        f'Expense {new_status}',
+                        f"Your {expense.get('category', '')} expense of {inr(expense.get('amount') or 0, '₹')} is now {new_status}.",
+                        type='expense_update',
+                        reference_id=str(obj_id),
+                    )
             
             updated_expense = expenses_collection.find_one({'_id': obj_id})
             updated_expense['_id'] = str(updated_expense['_id'])

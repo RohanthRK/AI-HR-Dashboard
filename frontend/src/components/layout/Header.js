@@ -1,15 +1,21 @@
+import { useCompanyName } from '../../utils/company';
 import React, { useState, useEffect, useRef } from 'react';
+
 import { useNavigate } from 'react-router-dom';
+
 import { useAuth } from '../../contexts/AuthContext';
-import { useNotifications } from '../../contexts/NotificationContext';
+
+import NotificationMenu from '../notifications/NotificationMenu';
+
 import { useColorMode } from '../../contexts/ThemeContext';
+
 import { motion, AnimatePresence } from 'framer-motion';
+
 
 // Material UI components
 import {
   AppBar,
   Avatar,
-  Badge,
   Box,
   IconButton,
   Menu,
@@ -21,45 +27,52 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemAvatar,
   ListItemButton,
   Chip,
   useTheme,
   alpha,
   InputBase,
   Button,
-  ButtonGroup
 } from '@mui/material';
 
 // Icons
 import MenuIcon from '@mui/icons-material/Menu';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+
+
 import LogoutIcon from '@mui/icons-material/Logout';
+import LockResetIcon from '@mui/icons-material/LockReset';
+import ChangePasswordDialog from '../auth/ChangePasswordDialog';
+
 import SettingsIcon from '@mui/icons-material/Settings';
+
 import PersonIcon from '@mui/icons-material/Person';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
+
+
+
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+
 import SearchIcon from '@mui/icons-material/Search';
+
 import DarkModeIcon from '@mui/icons-material/DarkMode';
+
 import LightModeIcon from '@mui/icons-material/LightMode';
+
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+
 
 const Header = ({ sidebarOpen, toggleSidebar }) => {
   const [userMenuAnchor, setUserMenuAnchor] = useState(null);
-  const [notificationsAnchor, setNotificationsAnchor] = useState(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const searchInputRef = useRef(null);
 
   const { currentUser, logout } = useAuth();
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const { mode, toggleColorMode } = useColorMode();
+  const companyName = useCompanyName();
   const navigate = useNavigate();
   const theme = useTheme();
 
   const userMenuOpen = Boolean(userMenuAnchor);
-  const notificationsOpen = Boolean(notificationsAnchor);
 
   // Keyboard shortcut for search
   useEffect(() => {
@@ -82,53 +95,21 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
     setUserMenuAnchor(null);
   };
 
-  // Notifications menu handlers
-  const handleNotificationsOpen = (event) => {
-    setNotificationsAnchor(event.currentTarget);
-  };
-
-  const handleNotificationsClose = () => {
-    setNotificationsAnchor(null);
-  };
-
-  // Logout handler
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Profile handler
   const handleProfile = () => {
     handleUserMenuClose();
     navigate(`/employees/${currentUser?.employee_id || currentUser?.id}`);
   };
 
-  // Settings handler
   const handleSettings = () => {
     handleUserMenuClose();
     navigate('/settings');
   };
 
-  // Notification click handler
-  const handleNotificationClick = (notification) => {
-    markAsRead(notification._id);
-
-    // Navigate based on notification type
-    if (notification.type === 'leave_request' && notification.reference_id) {
-      navigate(`/leaves/pending`);
-    } else if (notification.type === 'leave_update' && notification.reference_id) {
-      navigate(`/leaves`);
-    } else if (notification.type === 'review') {
-      navigate(`/reviews`);
-    }
-
-    handleNotificationsClose();
-  };
-
-  // Mark all as read handler
-  const handleMarkAllAsRead = () => {
-    markAllAsRead();
-  };
 
   // Search handler
   const handleSearch = (e) => {
@@ -181,7 +162,7 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
             mr: 2
           }}
         >
-          HR DASHBOARD
+          {(companyName || 'HR Dashboard').toUpperCase()}
         </Typography>
 
         {/* Universal Command Center (Search bar) */}
@@ -216,7 +197,8 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
               width: '100%',
               '& .MuiInputBase-input': {
                 padding: theme.spacing(1, 1, 1, 0),
-              }
+              },
+              '& .MuiInputBase-input::placeholder': { color: '#555555', opacity: 1 }
             }}
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
@@ -240,16 +222,18 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
 
         <Box sx={{ flexGrow: 1 }} />
 
-        {/* Development Mode Indicator - Only for Admins */}
+        {/* Shown to administrators only */}
         {currentUser?.role === 'Admin' && (
           <Chip
             icon={<AdminPanelSettingsIcon />}
-            label="ADMIN MODE"
-            color="warning"
+            label="ADMIN"
             variant="outlined"
             size="small"
             sx={{
               mr: 2,
+              color: mode === 'light' ? '#9a3412' : '#fdba74',
+              borderColor: mode === 'light' ? '#9a3412' : '#fdba74',
+              '& .MuiChip-icon': { color: 'inherit' },
               display: { xs: 'none', md: 'flex' },
               borderWidth: 1,
               borderRadius: '16px',
@@ -280,164 +264,7 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
 
         {/* Notifications */}
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-            <Tooltip title="Notifications">
-              <IconButton
-                color="inherit"
-                onClick={handleNotificationsOpen}
-                aria-controls={notificationsOpen ? 'notifications-menu' : undefined}
-                aria-haspopup="true"
-                aria-expanded={notificationsOpen ? 'true' : undefined}
-              >
-                <Badge
-                  badgeContent={unreadCount}
-                  color="error"
-                  sx={{
-                    '& .MuiBadge-badge': {
-                      fontSize: '0.7rem',
-                      height: 18,
-                      minWidth: 18,
-                      fontWeight: 'bold'
-                    }
-                  }}
-                >
-                  <NotificationsIcon />
-                </Badge>
-              </IconButton>
-            </Tooltip>
-          </motion.div>
-
-          {/* Notifications Menu */}
-          <Menu
-            id="notifications-menu"
-            anchorEl={notificationsAnchor}
-            open={notificationsOpen}
-            onClose={handleNotificationsClose}
-            PaperProps={{
-              elevation: 2,
-              sx: {
-                overflow: 'visible',
-                filter: 'drop-shadow(0px 4px 20px rgba(0,0,0,0.15))',
-                mt: 1.5,
-                maxHeight: 420,
-                width: 350,
-                borderRadius: 2,
-                '& .MuiAvatar-root': {
-                  width: 38,
-                  height: 38,
-                  ml: -0.5,
-                  mr: 1,
-                },
-              },
-            }}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          >
-            <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Notifications</Typography>
-              {unreadCount > 0 && (
-                <Tooltip title="Mark all as read">
-                  <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                    <IconButton size="small" onClick={handleMarkAllAsRead} color="primary">
-                      <CheckCircleIcon fontSize="small" />
-                    </IconButton>
-                  </motion.div>
-                </Tooltip>
-              )}
-            </Box>
-            <Divider />
-            <Box sx={{ maxHeight: 320, overflow: 'auto' }}>
-              {notifications.length > 0 ? (
-                <List sx={{ p: 0 }}>
-                  <AnimatePresence>
-                    {notifications.map((notification, index) => (
-                      <motion.div
-                        key={notification._id}
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: 100 }}
-                        transition={{ duration: 0.2, delay: index * 0.05 }}
-                      >
-                        <ListItem
-                          disablePadding
-                          sx={{
-                            backgroundColor: notification.read ? 'transparent' : alpha(theme.palette.primary.main, 0.08)
-                          }}
-                        >
-                          <ListItemButton
-                            onClick={() => handleNotificationClick(notification)}
-                            sx={{
-                              '&:hover': {
-                                backgroundColor: alpha(theme.palette.primary.main, 0.12)
-                              },
-                              borderLeft: notification.read ? 'none' : `3px solid ${theme.palette.primary.main}`,
-                            }}
-                          >
-                            <ListItemAvatar>
-                              <Avatar sx={{ bgcolor: notification.read ? alpha(theme.palette.grey[500], 0.7) : theme.palette.primary.main }}>
-                                {notification.type === 'leave_request' ? 'L' :
-                                  notification.type === 'leave_update' ? 'LU' :
-                                    notification.type === 'system' ? 'S' : 'N'}
-                              </Avatar>
-                            </ListItemAvatar>
-                            <ListItemText
-                              primary={notification.title}
-                              secondary={
-                                <React.Fragment>
-                                  <Typography
-                                    variant="body2"
-                                    color="text.primary"
-                                    sx={{
-                                      display: 'block',
-                                      fontWeight: notification.read ? 'normal' : 'medium',
-                                      mb: 0.5
-                                    }}
-                                  >
-                                    {notification.message}
-                                  </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    color="text.secondary"
-                                  >
-                                    {notification.timestamp || '2 hours ago'}
-                                  </Typography>
-                                </React.Fragment>
-                              }
-                              primaryTypographyProps={{
-                                fontWeight: notification.read ? 'medium' : 'bold',
-                              }}
-                            />
-                          </ListItemButton>
-                        </ListItem>
-                        {index < notifications.length - 1 && <Divider component="li" />}
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </List>
-              ) : (
-                <Box sx={{ p: 4, textAlign: 'center' }}>
-                  <NotificationsOffIcon color="disabled" sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                  <Typography color="text.secondary" variant="body1">No notifications yet</Typography>
-                  <Typography color="text.disabled" variant="caption" sx={{ display: 'block', mt: 1 }}>
-                    We'll notify you when something important happens
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-            <Divider />
-            <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'center' }}>
-              <Button
-                size="small"
-                onClick={() => {
-                  handleNotificationsClose();
-                  navigate('/dashboard/notifications');
-                }}
-                sx={{ borderRadius: 4, fontSize: '0.75rem' }}
-              >
-                View All Notifications
-              </Button>
-            </Box>
-          </Menu>
+          <NotificationMenu />
 
           {/* User Profile */}
           <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
@@ -459,7 +286,7 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
                     border: `2px solid ${alpha(theme.palette.primary.main, 0.2)}`
                   }}
                 >
-                  {currentUser?.name ? currentUser.name.charAt(0) : "U"}
+                  {(currentUser?.first_name || currentUser?.name || currentUser?.username || "U").charAt(0).toUpperCase()}
                 </Avatar>
               </IconButton>
             </Tooltip>
@@ -507,9 +334,9 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
                   boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.2)}`
                 }}
               >
-                {currentUser?.name ? currentUser.name.charAt(0) : "U"}
+                {(currentUser?.first_name || currentUser?.name || currentUser?.username || "U").charAt(0).toUpperCase()}
               </Avatar>
-              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.main', mb: 0.5 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary', mb: 0.5 }}>
                 {currentUser?.first_name && currentUser?.last_name 
                   ? `${currentUser.first_name} ${currentUser.last_name}` 
                   : (currentUser?.name || currentUser?.username || 'User')}
@@ -545,10 +372,16 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
               <PersonIcon sx={{ mr: 1.5 }} fontSize="small" />
               <Typography variant="body2">My Profile</Typography>
             </MenuItem>
-            <MenuItem onClick={handleSettings}>
-              <SettingsIcon sx={{ mr: 1.5 }} fontSize="small" />
-              <Typography variant="body2">Settings</Typography>
+            <MenuItem onClick={() => { handleUserMenuClose(); setPasswordOpen(true); }}>
+              <LockResetIcon sx={{ mr: 1.5 }} fontSize="small" />
+              <Typography variant="body2">Change password</Typography>
             </MenuItem>
+            {currentUser?.role === 'Admin' && (
+              <MenuItem onClick={handleSettings}>
+                <SettingsIcon sx={{ mr: 1.5 }} fontSize="small" />
+                <Typography variant="body2">Settings</Typography>
+              </MenuItem>
+            )}
             <Divider sx={{ my: 1 }} />
             <MenuItem onClick={handleLogout} sx={{ color: theme.palette.error.main }}>
               <LogoutIcon sx={{ mr: 1.5 }} fontSize="small" />
@@ -557,6 +390,7 @@ const Header = ({ sidebarOpen, toggleSidebar }) => {
           </Menu>
         </Box>
       </Toolbar>
+      <ChangePasswordDialog open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </AppBar>
   );
 };

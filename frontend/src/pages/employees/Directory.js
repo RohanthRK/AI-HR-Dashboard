@@ -1,5 +1,9 @@
+import api from '../../services/api';
+
 import React, { useState, useEffect } from 'react';
+
 import { useNavigate, useLocation } from 'react-router-dom';
+
 import {
   Box,
   Typography,
@@ -15,7 +19,6 @@ import {
   Button,
   Avatar,
   Chip,
-  IconButton,
   InputAdornment,
   FormControl,
   InputLabel,
@@ -25,28 +28,23 @@ import {
   Snackbar,
   Alert,
   useTheme,
-  Grid,
-  alpha
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Search as SearchIcon,
-  FilterList as FilterIcon,
-  Add as AddIcon,
-  Visibility as ViewIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon
 } from '@mui/icons-material';
 
 import employeeService from '../../services/employeeService';
+
 import { useAuth } from '../../contexts/AuthContext';
-import AddEmployeeDialog from '../../components/employees/AddEmployeeDialog';
-import EmployeeAddEdit from '../../components/employees/EmployeeAddEdit';
+
+
 
 const Directory = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { currentUser, isAdmin, isManager } = useAuth();
-  const isAuthorizedToAdd = isAdmin() || isManager();
+  const isAuthorizedToAdd = isAdmin();      // only HR / administrators add employees
 
   const location = useLocation();
   
@@ -60,7 +58,7 @@ const Directory = () => {
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   
   const [filterDepartment, setFilterDepartment] = useState('All');
-  const [filterStatus, setFilterStatus] = useState('All');
+  const [filterStatus, setFilterStatus] = useState('Active');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   
@@ -69,7 +67,6 @@ const Directory = () => {
   const [availableTeams, setAvailableTeams] = useState([]);
   const [availablePositions, setAvailablePositions] = useState([]);
 
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
@@ -101,7 +98,7 @@ const Directory = () => {
       
       if (teamNames.length === 0) {
         try {
-          const teamRes = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/ai/team-stats/`).then(r => r.json());
+          const teamRes = (await api.get('/api/ai/team-stats/')).data;
           if (teamRes.departments) {
             teamRes.departments.forEach(dept => {
               (dept.teams || []).forEach(t => t.name && teamNames.push(t.name));
@@ -131,17 +128,14 @@ const Directory = () => {
   const applyFilters = () => {
     let results = employees;
     if (searchTerm) {
-      results = results.filter(e => 
-        e.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        e.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        e.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const needle = searchTerm.trim().toLowerCase();
+      results = results.filter(e => `${e.first_name || ''} ${e.last_name || ''} ${e.email || ''} ${e.employee_id || ''} ${e.position || ''} ${e.phone || ''}`.toLowerCase().includes(needle));
     }
     if (filterDepartment !== 'All') {
       results = results.filter(e => e.department === filterDepartment);
     }
     if (filterStatus !== 'All') {
-      results = results.filter(e => e.employment_status === filterStatus);
+      results = results.filter(e => (e.employment_status || e.status || 'Active') === filterStatus);
     }
     setFilteredEmployees(results);
   };
@@ -155,7 +149,6 @@ const Directory = () => {
         await employeeService.createEmployee(data);
         setNotification({ open: true, message: 'Employee added successfully', severity: 'success' });
       }
-      setIsAddDialogOpen(false);
       setIsEditDialogOpen(false);
       setSelectedEmployee(null);
       fetchEmployees();
@@ -167,21 +160,21 @@ const Directory = () => {
   const handleViewProfile = (id) => navigate(`/employees/${id}`);
 
   return (
-    <Box sx={{ p: 4, bgcolor: 'background.default', color: 'text.primary', minHeight: '100vh', width: '100%' }}>
+    <Box sx={{ p: 0, bgcolor: 'background.default', color: 'text.primary' }}>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h3" sx={{ fontWeight: 900, letterSpacing: -1 }}>
+        <Typography variant="h4" component="h1">
           EMPLOYEE DIRECTORY
         </Typography>
         {isAuthorizedToAdd && (
           <Button 
             variant="contained" 
-            onClick={() => setIsAddDialogOpen(true)}
+            onClick={() => navigate('/signup?new=1')}
             sx={{ 
               bgcolor: '#000', color: '#fff', fontWeight: 'bold', border: '3px solid #000',
               boxShadow: '4px 4px 0px #fcc419', '&:hover': { bgcolor: '#333' }
             }}
           >
-            + ADD NEW EMPLOYEE
+            + ADD EMPLOYEE
           </Button>
         )}
       </Box>
@@ -191,7 +184,7 @@ const Directory = () => {
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={6}>
             <TextField
-              fullWidth placeholder="Search by name or email..." value={searchTerm}
+              fullWidth placeholder="Search by name, ID, role, email or phone" value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
               variant="outlined"
@@ -200,7 +193,7 @@ const Directory = () => {
           <Grid item xs={12} md={3}>
             <FormControl fullWidth>
               <InputLabel>Department</InputLabel>
-              <Select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} label="Department">
+              <Select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} label="Department" SelectDisplayProps={{ 'aria-label': 'Filter by department' }}>
                 <MenuItem value="All">All Departments</MenuItem>
                 {availableDepartments.map(d => <MenuItem key={d} value={d}>{d}</MenuItem>)}
               </Select>
@@ -209,9 +202,10 @@ const Directory = () => {
           <Grid item xs={12} md={3}>
             <FormControl fullWidth>
               <InputLabel>Status</InputLabel>
-              <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} label="Status">
+              <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} label="Status" SelectDisplayProps={{ 'aria-label': 'Filter by status' }}>
                 <MenuItem value="All">All Statuses</MenuItem>
                 <MenuItem value="Active">Active</MenuItem>
+                <MenuItem value="Terminated">Former employees</MenuItem>
                 <MenuItem value="On Leave">On Leave</MenuItem>
                 <MenuItem value="Inactive">Inactive</MenuItem>
               </Select>
@@ -252,13 +246,13 @@ const Directory = () => {
                 <TableCell>{emp.team || '-'}</TableCell>
                 <TableCell>
                   <Chip 
-                    label={emp.employment_status || 'Active'} 
+                    label={emp.employment_status || emp.status || 'Active'} 
                     size="small"
                     sx={{ 
                       fontWeight: 'bold', border: '2px solid',
-                      bgcolor: (emp.employment_status === 'Active' || !emp.employment_status) ? '#ebfbee' : '#fff4e6',
-                      borderColor: (emp.employment_status === 'Active' || !emp.employment_status) ? '#2b8a3e' : '#e67700',
-                      color: (emp.employment_status === 'Active' || !emp.employment_status) ? '#2b8a3e' : '#e67700'
+                      bgcolor: ((emp.employment_status || emp.status || 'Active') === 'Active') ? '#ebfbee' : '#fff4e6',
+                      borderColor: ((emp.employment_status || emp.status || 'Active') === 'Active') ? '#1f6f35' : '#e67700',
+                      color: ((emp.employment_status || emp.status || 'Active') === 'Active') ? '#1f6f35' : '#e67700'
                     }} 
                   />
                 </TableCell>
@@ -285,14 +279,6 @@ const Directory = () => {
           onRowsPerPageChange={(e) => setRowsPerPage(parseInt(e.target.value, 10))}
         />
       </TableContainer>
-
-      {/* Add Employee Dialog */}
-      <AddEmployeeDialog 
-        open={isAddDialogOpen}
-        onClose={() => setIsAddDialogOpen(false)}
-        onSave={handleSaveEmployee}
-        departments={allDeptsData}
-      />
 
       <Snackbar open={notification.open} autoHideDuration={6000} onClose={() => setNotification({ ...notification, open: false })}>
         <Alert severity={notification.severity} variant="filled" sx={{ fontWeight: 900, border: '3px solid #000', borderRadius: 0 }}>

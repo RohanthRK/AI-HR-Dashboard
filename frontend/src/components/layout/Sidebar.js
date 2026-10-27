@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
+
 import { useNavigate, useLocation } from 'react-router-dom';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 import { motion, AnimatePresence } from 'framer-motion';
+
 
 // Material UI components
 import {
@@ -25,34 +29,62 @@ import {
   Paper
 } from '@mui/material';
 
+
 // Icons
 import DashboardIcon from '@mui/icons-material/Dashboard';
+
 import PeopleIcon from '@mui/icons-material/People';
+
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+
 import EventBusyIcon from '@mui/icons-material/EventBusy';
-import GradingIcon from '@mui/icons-material/Grading';
+
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+
 import BarChartIcon from '@mui/icons-material/BarChart';
-import TimelineIcon from '@mui/icons-material/Timeline';
+
+
+import PollIcon from '@mui/icons-material/Poll';
+
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+
 import SettingsIcon from '@mui/icons-material/Settings';
-import ChatIcon from '@mui/icons-material/Chat';
+
+
 import ExpandLess from '@mui/icons-material/ExpandLess';
+
 import ExpandMore from '@mui/icons-material/ExpandMore';
+
 import WorkIcon from '@mui/icons-material/Work';
-import FindInPageIcon from '@mui/icons-material/FindInPage';
+
 import AssessmentIcon from '@mui/icons-material/Assessment';
+
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+
 import PsychologyIcon from '@mui/icons-material/Psychology';
+
 import SchoolIcon from '@mui/icons-material/School';
+
 import PersonSearchIcon from '@mui/icons-material/PersonSearch';
+
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+
 import GroupsIcon from '@mui/icons-material/Groups';
+
 import BusinessIcon from '@mui/icons-material/Business';
+
 import RateReviewIcon from '@mui/icons-material/RateReview';
+
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
-import LogoutIcon from '@mui/icons-material/Logout';
+
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+
 
 const drawerWidth = 240;
 
@@ -108,8 +140,7 @@ const Sidebar = ({ open }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const [analyticsOpen, setAnalyticsOpen] = useState(location.pathname.startsWith('/analytics'));
-  const [aiToolsOpen, setAiToolsOpen] = useState(location.pathname.startsWith('/ai-tools'));
+  const [aiToolsOpen, setAiToolsOpen] = useState(location.pathname.startsWith('/ai-tools') || location.pathname.startsWith('/recruitment'));
   const [performanceOpen, setPerformanceOpen] = useState(location.pathname.startsWith('/performance'));
 
   // Navigation items with access control
@@ -197,36 +228,27 @@ const Sidebar = ({ open }) => {
       text: 'Analytics',
       icon: <BarChartIcon />,
       path: '/analytics',
-      roles: ['Admin', 'Manager'],  // Restricted to Admin and Manager
-      color: theme.palette.primary.dark,
-      subItems: [
-        {
-          text: 'Overview',
-          icon: <BarChartIcon />,
-          path: '/analytics',
-          roles: ['Admin', 'Manager'],
-          color: theme.palette.primary.dark
-        },
-        {
-          text: 'Advanced Analytics',
-          icon: <TimelineIcon />,
-          path: '/analytics/advanced',
-          roles: ['Admin', 'Manager'],
-          color: theme.palette.primary.dark
-        }
-      ]
+      roles: ['Admin'],  // company-wide figures, including pay, are for HR / administrators
+      color: theme.palette.primary.dark
     },
     {
       text: 'HR Tools',
       icon: <SmartToyIcon />,
       path: '/ai-tools',
-      roles: ['Admin', 'HR'],  // Restricted to Admin and HR
+      roles: ['Admin', 'Manager', 'HR'],  // Restricted to Admin, Manager and HR
       color: '#7209b7',
       subItems: [
         {
           text: 'Resume Screening',
           icon: <PersonSearchIcon />,
           path: '/ai-tools/resume-screening',
+          roles: ['Admin', 'HR'],
+          color: '#7209b7'
+        },
+        {
+          text: 'Recruitment',
+          icon: <PersonSearchIcon />,
+          path: '/recruitment',
           roles: ['Admin', 'HR'],
           color: '#7209b7'
         },
@@ -261,11 +283,46 @@ const Sidebar = ({ open }) => {
       ]
     },
     {
-      text: 'Recruitment',
-      icon: <WorkIcon />,
-      path: '/recruitment',
-      roles: ['Admin', 'HR'],  // Restricted to Admin and HR
-      color: theme.palette.secondary.dark
+      text: 'Training',
+      icon: <SchoolIcon />,
+      path: '/training',
+      roles: [],
+      color: theme.palette.info.main
+    },
+    {
+      text: 'Surveys',
+      icon: <PollIcon />,
+      path: '/surveys',
+      roles: [],
+      color: theme.palette.secondary.main
+    },
+    {
+      text: 'Compliance',
+      icon: <VerifiedUserIcon />,
+      path: '/compliance',
+      roles: ['Admin', 'HR'],
+      color: theme.palette.warning.main
+    },
+    {
+      text: 'Recognition',
+      icon: <EmojiEventsIcon />,
+      path: '/recognition',
+      roles: [],
+      color: theme.palette.warning.main
+    },
+    {
+      text: 'Onboarding',
+      icon: <ExitToAppIcon style={{ transform: 'scaleX(-1)' }} />,
+      path: '/onboarding',
+      roles: [],
+      color: theme.palette.success.main
+    },
+    {
+      text: 'Exit Management',
+      icon: <ExitToAppIcon />,
+      path: '/offboarding',
+      roles: [],
+      color: theme.palette.error.main
     },
     {
       text: 'User Management',
@@ -282,14 +339,7 @@ const Sidebar = ({ open }) => {
       color: theme.palette.grey[700]
     },
     {
-      text: 'AI Assistant',
-      icon: <ChatIcon />,
-      path: '/chat',
-      roles: [],  // Accessible by all roles
-      color: theme.palette.secondary.main
-    },
-    {
-      text: 'My Expenses',
+      text: 'Expenses',
       icon: <AttachMoneyIcon />,
       path: '/expenses',
       roles: [],
@@ -314,11 +364,6 @@ const Sidebar = ({ open }) => {
     navigate(path);
   };
 
-  // Toggle analytics submenu
-  const handleToggleAnalytics = () => {
-    setAnalyticsOpen(!analyticsOpen);
-  };
-
   // Toggle AI tools submenu
   const handleToggleAiTools = () => {
     setAiToolsOpen(!aiToolsOpen);
@@ -339,6 +384,7 @@ const Sidebar = ({ open }) => {
 
   // Check if an item with subitems is active
   const isParentActive = (path) => {
+    if (path === '/ai-tools') return location.pathname.startsWith('/ai-tools') || location.pathname.startsWith('/recruitment');
     return location.pathname.startsWith(path);
   };
 
@@ -348,8 +394,9 @@ const Sidebar = ({ open }) => {
       anchor="left"
       open={open}
       sx={{
-        width: drawerWidth,
+        width: open ? drawerWidth : 0,
         flexShrink: 0,
+        transition: 'width 0.3s ease',
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
@@ -426,14 +473,14 @@ const Sidebar = ({ open }) => {
               mr: 1.5
             }}
           >
-            {currentUser?.username?.charAt(0).toUpperCase() || 'U'}
+            {(currentUser?.first_name || currentUser?.username || 'U').charAt(0).toUpperCase()}
           </Avatar>
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-              {currentUser?.username || 'User'}
+              {[currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(' ') || currentUser?.username || 'User'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {currentUser?.role || 'Member'}
+              {currentUser?.role || 'Member'}{currentUser?.team ? ` · ${currentUser.team}` : ''}
             </Typography>
           </Box>
         </Paper>
@@ -442,7 +489,7 @@ const Sidebar = ({ open }) => {
       <Divider sx={{ mb: 1 }} />
 
       <Box sx={{ overflow: 'auto', px: 1, height: 'calc(100% - 180px)' }}>
-        <List sx={{ pt: 0 }}>
+        <List component="nav" aria-label="Main navigation" sx={{ pt: 0 }}>
           <AnimatePresence>
             {filteredItems.map((item) => (
               <React.Fragment key={item.text}>
@@ -451,14 +498,13 @@ const Sidebar = ({ open }) => {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <ListItem disablePadding>
+                  <ListItem component="div" disablePadding>
                     {item.subItems ? (
                       <Tooltip title={!open ? item.text : ''} placement="right">
                         <ListItemButton
                           onClick={
-                            item.text === 'Analytics' ? handleToggleAnalytics :
-                              item.text === 'HR Tools' ? handleToggleAiTools :
-                                item.text === 'Performance' ? handleTogglePerformance : null
+                            item.text === 'HR Tools' ? handleToggleAiTools :
+                              item.text === 'Performance' ? handleTogglePerformance : null
                           }
                           sx={{
                             py: 1.2,
@@ -503,9 +549,8 @@ const Sidebar = ({ open }) => {
                               </Typography>
                             }
                           />
-                          {item.text === 'Analytics' ? (analyticsOpen ? <ExpandLess /> : <ExpandMore />) :
-                            item.text === 'HR Tools' ? (aiToolsOpen ? <ExpandLess /> : <ExpandMore />) :
-                              item.text === 'Performance' ? (performanceOpen ? <ExpandLess /> : <ExpandMore />) : null}
+                          {item.text === 'HR Tools' ? (aiToolsOpen ? <ExpandLess /> : <ExpandMore />) :
+                            item.text === 'Performance' ? (performanceOpen ? <ExpandLess /> : <ExpandMore />) : null}
                         </ListItemButton>
                       </Tooltip>
                     ) : (
@@ -560,62 +605,12 @@ const Sidebar = ({ open }) => {
                     )}
                   </ListItem>
 
-                  {/* Analytics submenu */}
-                  {item.text === 'Analytics' && (
-                    <Collapse in={analyticsOpen} timeout="auto" unmountOnExit>
-                      <List component="div" disablePadding>
-                        {item.subItems.map(subItem => (
-                          <ListItem key={subItem.text} disablePadding>
-                            <ListItemButton
-                              onClick={() => handleNavigation(subItem.path)}
-                              sx={{
-                                py: 1,
-                                pl: 6,
-                                bgcolor: isActive(subItem.path) ? alpha(subItem.color || theme.palette.primary.main, 0.12) : 'transparent',
-                                '&:hover': {
-                                  bgcolor: alpha(subItem.color || theme.palette.primary.main, 0.08)
-                                },
-                                borderRadius: '0 20px 20px 0',
-                                mx: 1,
-                                my: 0.25
-                              }}
-                            >
-                              <ListItemIcon
-                                sx={{
-                                  minWidth: 36,
-                                  color: isActive(subItem.path) ? subItem.color || theme.palette.primary.main : 'inherit',
-                                  fontSize: '1.2rem'
-                                }}
-                              >
-                                {subItem.icon}
-                              </ListItemIcon>
-                              <ListItemText
-                                primary={
-                                  <Typography
-                                    variant="body2"
-                                    sx={{
-                                      fontWeight: isActive(subItem.path) ? 600 : 400,
-                                      fontSize: '0.875rem',
-                                      color: isActive(subItem.path) ? theme.palette.text.primary : theme.palette.text.secondary
-                                    }}
-                                  >
-                                    {subItem.text}
-                                  </Typography>
-                                }
-                              />
-                            </ListItemButton>
-                          </ListItem>
-                        ))}
-                      </List>
-                    </Collapse>
-                  )}
-
                   {/* AI Tools submenu */}
                   {item.text === 'HR Tools' && (
                     <Collapse in={aiToolsOpen} timeout="auto" unmountOnExit>
                       <List component="div" disablePadding>
                         {item.subItems.map(subItem => (
-                          <ListItem key={subItem.text} disablePadding>
+                          <ListItem component="div" key={subItem.text} disablePadding>
                             <ListItemButton
                               onClick={() => handleNavigation(subItem.path)}
                               sx={{
@@ -665,7 +660,7 @@ const Sidebar = ({ open }) => {
                     <Collapse in={performanceOpen} timeout="auto" unmountOnExit>
                       <List component="div" disablePadding>
                         {item.subItems.map(subItem => (
-                          <ListItem key={subItem.text} disablePadding>
+                          <ListItem component="div" key={subItem.text} disablePadding>
                             <ListItemButton
                               onClick={() => handleNavigation(subItem.path)}
                               sx={{

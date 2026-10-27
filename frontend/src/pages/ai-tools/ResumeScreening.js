@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
+
 import {
   Box,
   Typography,
   Paper,
-  Grid,
   TextField,
   Button,
   CircularProgress,
   Card,
   CardContent,
-  Divider,
   Chip,
   Alert,
   Rating,
@@ -25,10 +24,6 @@ import {
   MenuItem,
   Select,
   Autocomplete,
-  Checkbox,
-  FormGroup,
-  FormControlLabel,
-  OutlinedInput,
   Tab,
   Tabs,
   Table,
@@ -44,25 +39,23 @@ import {
   DialogTitle,
   Snackbar,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Upload as UploadIcon,
   Close as CloseIcon,
   Send as SendIcon,
   Person as PersonIcon,
-  School as SchoolIcon,
-  Work as WorkIcon,
-  Assignment as AssignmentIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Email as EmailIcon,
   Save as SaveIcon,
-  CloudUpload as CloudUploadIcon,
-  Download as DownloadIcon,
   Delete as DeleteIcon,
   ViewList as ViewListIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
+
 import axios from '../../services/api';
+
 
 
 // Styled components
@@ -78,358 +71,6 @@ const VisuallyHiddenInput = styled('input')({
   width: 1,
 });
 
-// Department-specific data mapping
-const departmentData = {
-  Engineering: {
-    jobTitles: [
-      'Software Engineer',
-      'Frontend Developer',
-      'Backend Developer',
-      'Full Stack Developer',
-      'DevOps Engineer',
-      'QA Engineer',
-      'Data Engineer',
-      'Machine Learning Engineer',
-      'Engineering Manager'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Lead Level (8+ years)'
-    ],
-    skillsOptions: [
-      'JavaScript', 'TypeScript', 'React', 'Angular', 'Vue.js',
-      'Node.js', 'Python', 'Java', 'C#', '.NET',
-      'AWS', 'Azure', 'Google Cloud', 'Docker', 'Kubernetes',
-      'SQL', 'NoSQL', 'MongoDB', 'PostgreSQL',
-      'CI/CD', 'Git', 'Agile Methodologies', 'TDD',
-      'Machine Learning', 'AI', 'Data Analysis',
-      'REST APIs', 'GraphQL', 'Microservices Architecture'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Computer Science',
-      'Bachelor\'s in Software Engineering',
-      'Bachelor\'s in IT',
-      'Master\'s in Computer Science',
-      'PhD in Computer Science',
-      'Bootcamp Graduate',
-      'Self-taught (with portfolio)'
-    ]
-  },
-  Product: {
-    jobTitles: [
-      'Product Manager',
-      'Product Owner',
-      'Associate Product Manager',
-      'Senior Product Manager',
-      'Director of Product',
-      'Product Analyst',
-      'Product Marketing Manager'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Executive Level (8+ years)'
-    ],
-    skillsOptions: [
-      'Product Strategy', 'Roadmap Planning', 'User Research',
-      'Market Research', 'Competitive Analysis', 'A/B Testing',
-      'Data Analysis', 'SQL', 'Product Analytics Tools',
-      'Wireframing', 'Prototyping', 'Figma', 'Sketch',
-      'Agile', 'Scrum', 'Jira', 'Product Lifecycle Management',
-      'User Stories', 'Stakeholder Management', 'Prioritization',
-      'Requirements Gathering', 'Go-to-market Strategy'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Business',
-      'Bachelor\'s in Computer Science',
-      'Bachelor\'s in Marketing',
-      'MBA',
-      'Master\'s in Product Management',
-      'Product Management Certification'
-    ]
-  },
-  Marketing: {
-    jobTitles: [
-      'Marketing Specialist',
-      'Digital Marketing Manager',
-      'Content Marketing Manager',
-      'SEO Specialist',
-      'Social Media Manager',
-      'Growth Marketer',
-      'Marketing Analytics Manager',
-      'Brand Manager'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Director Level (8+ years)'
-    ],
-    skillsOptions: [
-      'Content Creation', 'Copywriting', 'SEO', 'SEM',
-      'Social Media Management', 'Google Analytics',
-      'Facebook Ads', 'Google Ads', 'Email Marketing',
-      'Marketing Automation', 'HubSpot', 'Marketo',
-      'A/B Testing', 'Conversion Rate Optimization',
-      'Brand Strategy', 'Campaign Management',
-      'Adobe Creative Suite', 'Video Production',
-      'Marketing Analytics', 'Customer Segmentation'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Marketing',
-      'Bachelor\'s in Communications',
-      'Bachelor\'s in Business',
-      'MBA',
-      'Digital Marketing Certification',
-      'Content Marketing Certification'
-    ]
-  },
-  Sales: {
-    jobTitles: [
-      'Sales Representative',
-      'Account Executive',
-      'Sales Manager',
-      'Business Development Representative',
-      'Sales Director',
-      'Account Manager',
-      'Sales Operations Manager'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Executive Level (8+ years)'
-    ],
-    skillsOptions: [
-      'B2B Sales', 'B2C Sales', 'Sales Strategy',
-      'Account Management', 'Lead Generation',
-      'Negotiation', 'Cold Calling', 'Relationship Building',
-      'CRM Systems', 'Salesforce', 'HubSpot CRM',
-      'Pipeline Management', 'Forecasting',
-      'Solution Selling', 'Consultative Selling',
-      'Sales Presentations', 'Contract Negotiations',
-      'Closing Techniques', 'Territory Management'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Business',
-      'Bachelor\'s in Marketing',
-      'Bachelor\'s in Communications',
-      'MBA',
-      'Sales Training Certification',
-      'High School Diploma with Sales Experience'
-    ]
-  },
-  'Customer Support': {
-    jobTitles: [
-      'Customer Support Specialist',
-      'Customer Success Manager',
-      'Technical Support Engineer',
-      'Support Team Lead',
-      'Customer Experience Manager',
-      'Help Desk Specialist'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5+ years)'
-    ],
-    skillsOptions: [
-      'Customer Service', 'Technical Troubleshooting',
-      'Helpdesk Software', 'Zendesk', 'Intercom',
-      'CRM Tools', 'Problem Solving', 'Communication',
-      'Active Listening', 'Conflict Resolution',
-      'Documentation', 'Knowledge Base Management',
-      'Customer Onboarding', 'Retention Strategies',
-      'SLAs Management', 'Customer Satisfaction Metrics'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Business',
-      'Bachelor\'s in Communications',
-      'Associate\'s Degree',
-      'High School Diploma',
-      'Customer Service Certification',
-      'Technical Support Certification'
-    ]
-  },
-  Finance: {
-    jobTitles: [
-      'Financial Analyst',
-      'Accountant',
-      'Financial Controller',
-      'Finance Manager',
-      'Financial Planning Analyst',
-      'Payroll Specialist',
-      'Finance Director'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Director Level (8+ years)'
-    ],
-    skillsOptions: [
-      'Financial Analysis', 'Budgeting', 'Forecasting',
-      'Financial Modeling', 'Excel Advanced', 'QuickBooks',
-      'SAP', 'Oracle Financials', 'GAAP',
-      'Financial Reporting', 'Variance Analysis',
-      'Cost Accounting', 'Risk Assessment',
-      'Taxation', 'Auditing', 'Cash Flow Management',
-      'ERP Systems', 'Financial Statement Analysis'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Finance',
-      'Bachelor\'s in Accounting',
-      'Bachelor\'s in Economics',
-      'MBA',
-      'CPA Certification',
-      'CFA Certification',
-      'Master\'s in Finance'
-    ]
-  },
-  'Human Resources': {
-    jobTitles: [
-      'HR Coordinator',
-      'HR Generalist',
-      'Recruiter',
-      'HR Manager',
-      'Talent Acquisition Specialist',
-      'Compensation and Benefits Specialist',
-      'Learning and Development Specialist',
-      'HRIS Analyst'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Director Level (8+ years)'
-    ],
-    skillsOptions: [
-      'Recruiting', 'Onboarding', 'Employee Relations',
-      'Performance Management', 'Benefits Administration',
-      'Compensation Planning', 'HRIS Systems', 'Workday',
-      'ATS Systems', 'Compliance', 'Employment Law',
-      'Training & Development', 'Conflict Resolution',
-      'Diversity & Inclusion', 'Employee Engagement',
-      'Succession Planning', 'Talent Management',
-      'HR Analytics', 'Change Management'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Human Resources',
-      'Bachelor\'s in Business Administration',
-      'Bachelor\'s in Psychology',
-      'MBA',
-      'Master\'s in HR Management',
-      'PHR/SPHR Certification',
-      'SHRM-CP/SHRM-SCP Certification'
-    ]
-  },
-  Legal: {
-    jobTitles: [
-      'Legal Counsel',
-      'Paralegal',
-      'Compliance Officer',
-      'Contract Manager',
-      'Legal Operations Manager',
-      'IP Specialist',
-      'Privacy Officer'
-    ],
-    experienceOptions: [
-      'Entry Level (1-3 years)',
-      'Mid Level (4-6 years)',
-      'Senior Level (7-10 years)',
-      'Director Level (10+ years)'
-    ],
-    skillsOptions: [
-      'Contract Review', 'Legal Research', 'Compliance',
-      'Regulatory Affairs', 'Intellectual Property',
-      'Corporate Law', 'Employment Law',
-      'Litigation Management', 'Legal Writing',
-      'Due Diligence', 'Risk Management',
-      'Legal Documentation', 'eDiscovery',
-      'Contract Management Systems', 'Legal Project Management'
-    ],
-    educationOptions: [
-      'Juris Doctor (JD)',
-      'Bachelor\'s in Law',
-      'Bachelor\'s in Paralegal Studies',
-      'Bachelor\'s in Business with Legal Focus',
-      'Master of Laws (LLM)',
-      'Legal Certifications',
-      'Bar Admission'
-    ]
-  },
-  Operations: {
-    jobTitles: [
-      'Operations Manager',
-      'Operations Analyst',
-      'Business Operations Specialist',
-      'Project Manager',
-      'Process Improvement Manager',
-      'Logistics Coordinator',
-      'Supply Chain Manager'
-    ],
-    experienceOptions: [
-      'Entry Level (0-2 years)',
-      'Mid Level (3-5 years)',
-      'Senior Level (5-8 years)',
-      'Director Level (8+ years)'
-    ],
-    skillsOptions: [
-      'Process Optimization', 'Project Management',
-      'Operations Analysis', 'Resource Planning',
-      'Supply Chain Management', 'Vendor Management',
-      'Lean Six Sigma', 'Process Mapping',
-      'KPI Tracking', 'Business Process Management',
-      'MS Office Suite', 'ERP Systems',
-      'Risk Assessment', 'Quality Control',
-      'Workflow Design', 'Cost Reduction Strategies',
-      'Cross-functional Coordination', 'Change Management'
-    ],
-    educationOptions: [
-      'Bachelor\'s in Operations Management',
-      'Bachelor\'s in Supply Chain Management',
-      'Bachelor\'s in Business Administration',
-      'MBA',
-      'PMP Certification',
-      'Six Sigma Certification',
-      'Master\'s in Operations Management'
-    ]
-  }
-};
-
-// Mock database for saved screening results
-const mockScreeningDatabase = [
-  {
-    id: "scr-001",
-    candidateName: "John Smith",
-    candidateEmail: "john.smith@example.com",
-    jobTitle: "Software Engineer",
-    department: "Engineering",
-    screeningDate: "2023-05-10",
-    score: 8.5,
-    detectedSkills: ["JavaScript", "React", "Node.js", "TypeScript", "MongoDB", "Git"],
-    matchingSkills: ["JavaScript", "React", "Node.js"],
-    missingSkills: ["GraphQL", "AWS"],
-    overallMatch: 85
-  },
-  {
-    id: "scr-002",
-    candidateName: "Sarah Johnson",
-    candidateEmail: "sarah.j@example.com",
-    jobTitle: "Product Manager",
-    department: "Product",
-    screeningDate: "2023-05-15",
-    score: 7.8,
-    detectedSkills: ["Product Strategy", "Roadmap Planning", "User Research", "Agile", "Jira"],
-    matchingSkills: ["Product Strategy", "User Research", "Agile"],
-    missingSkills: ["SQL", "A/B Testing"],
-    overallMatch: 78
-  }
-];
-
 const ResumeScreening = () => {
   // State for job requirements input
   const [jobTitle, setJobTitle] = useState('');
@@ -443,11 +84,10 @@ const ResumeScreening = () => {
   const [candidateName, setCandidateName] = useState('');
   const [candidateEmail, setCandidateEmail] = useState('');
 
-  // State for department-specific options
-  const [availableJobTitles, setAvailableJobTitles] = useState([]);
-  const [availableExperience, setAvailableExperience] = useState([]);
-  const [availableSkills, setAvailableSkills] = useState([]);
-  const [availableEducation, setAvailableEducation] = useState([]);
+  // The company's real openings and departments (nothing is hard-coded)
+  const [openings, setOpenings] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [openingId, setOpeningId] = useState('');
 
   // State for resume upload and processing
   const [resumeFile, setResumeFile] = useState(null);
@@ -464,47 +104,34 @@ const ResumeScreening = () => {
 
   // State for saved results view
   const [tabValue, setTabValue] = useState(0);
-  const [savedResults, setSavedResults] = useState(mockScreeningDatabase);
+  const [savedResults, setSavedResults] = useState([]);
+  useEffect(() => {
+    axios.get('/api/ai/resume-screening/history/').then((res) => setSavedResults(res.data)).catch(() => {});
+  }, []);
+  const [resultsSaved, setResultsSaved] = useState(false);
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [emailSubject, setEmailSubject] = useState('');
   const [emailMessage, setEmailMessage] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
 
-  // Mock departments
-  const departments = [
-    'Engineering',
-    'Product',
-    'Marketing',
-    'Sales',
-    'Customer Support',
-    'Finance',
-    'Human Resources',
-    'Legal',
-    'Operations',
-  ];
-
-  // Update available options when department changes
   useEffect(() => {
-    if (department && departmentData[department]) {
-      const data = departmentData[department];
-      setAvailableJobTitles(data.jobTitles || []);
-      setAvailableExperience(data.experienceOptions || []);
-      setAvailableSkills(data.skillsOptions || []);
-      setAvailableEducation(data.educationOptions || []);
+    axios.get('/api/recruitment/jobs/').then((res) => setOpenings(res.data.jobs || [])).catch(() => {});
+    axios.get('/api/employees/departments/').then((res) => setDepartments((res.data.results || res.data || []).map((d) => d.name).filter(Boolean))).catch(() => {});
+  }, []);
 
-      // Reset selection when department changes
-      setJobTitle('');
-      setExperience('');
-      setSelectedSkills([]);
-      setEducation('');
-    } else {
-      setAvailableJobTitles([]);
-      setAvailableExperience([]);
-      setAvailableSkills([]);
-      setAvailableEducation([]);
-    }
-  }, [department]);
+  // Choosing an opening fills in its requirements; they stay editable
+  const chooseOpening = (id) => {
+    setOpeningId(id);
+    const job = openings.find((j) => j._id === id);
+    if (!job) return;
+    setDepartment(job.department || '');
+    setJobTitle(job.title || '');
+    setExperience(job.experience ? `${job.experience}+ years` : '');
+    setEducation(job.education || '');
+    setSelectedSkills((job.skills || '').split(',').map((x) => x.trim()).filter(Boolean));
+    setJobRequirements(job.description || '');
+  };
 
   // Handle tab change
   const handleTabChange = (event, newValue) => {
@@ -569,50 +196,44 @@ Additional Requirements: ${jobRequirements}
     setIsEmailDialogOpen(false);
   };
 
-  // Send email
+  // Open the user's own mail client with the drafted message (the app does not send email itself)
   const handleSendEmail = () => {
-    // In a real app, you would make an API call to send an email
-    console.log('Sending email to:', candidateEmail);
-    console.log('Subject:', emailSubject);
-    console.log('Message:', emailMessage);
-
-    // Show success message
-    setSnackbarMessage(`Email sent to ${candidateEmail}`);
+    window.location.href = `mailto:${encodeURIComponent(candidateEmail)}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailMessage)}`;
+    setSnackbarMessage('Opening your email client...');
     setSnackbarOpen(true);
-
-    // Close dialog
     setIsEmailDialogOpen(false);
   };
 
-  // Save screening results to database
-  const handleSaveResults = () => {
+  // Save screening results to the database
+  const handleSaveResults = async () => {
     if (!screeningResults || !candidateName) {
       setSnackbarMessage('Candidate name is required to save results');
       setSnackbarOpen(true);
       return;
     }
 
-    // Create a new saved result object
-    const newResult = {
-      id: `scr-${(savedResults.length + 1).toString().padStart(3, '0')}`,
-      candidateName,
-      candidateEmail,
-      jobTitle,
-      department,
-      screeningDate: new Date().toISOString().split('T')[0],
-      score: screeningResults.score,
-      detectedSkills,
-      matchingSkills,
-      missingSkills,
-      overallMatch: screeningResults.match_details.overall_match
-    };
-
-    // In a real app, you would make an API call to save to a database
-    const updatedResults = [...savedResults, newResult];
-    setSavedResults(updatedResults);
-
-    // Show success message
-    setSnackbarMessage('Screening results saved successfully');
+    try {
+      const res = await axios.post('/api/ai/resume-screening/history/', {
+        candidateName,
+        candidateEmail,
+        jobTitle,
+        department,
+        score: screeningResults.score,
+        detectedSkills,
+        matchingSkills,
+        missingSkills,
+        overallMatch: screeningResults.match_details.overall_match
+      });
+      if (res.data.already_saved) {
+        setSnackbarMessage('These results are already saved (see the Saved Results tab).');
+      } else {
+        setSavedResults((prev) => [res.data, ...prev]);
+        setSnackbarMessage('Screening results saved successfully');
+      }
+      setResultsSaved(true);
+    } catch (err) {
+      setSnackbarMessage(err.response?.data?.error || 'Could not save the screening results');
+    }
     setSnackbarOpen(true);
   };
 
@@ -631,6 +252,7 @@ Additional Requirements: ${jobRequirements}
 
     setIsAnalyzing(true);
     setError(null);
+    setResultsSaved(false);
 
     try {
       const formData = new FormData();
@@ -730,94 +352,48 @@ Additional Requirements: ${jobRequirements}
               Job Requirements
             </Typography>
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" required>
-                  <InputLabel id="department-label">Department</InputLabel>
-                  <Select
-                    labelId="department-label"
-                    value={department}
-                    label="Department"
-                    onChange={(e) => setDepartment(e.target.value)}
-                  >
-                    {departments.map((dept) => (
-                      <MenuItem key={dept} value={dept}>{dept}</MenuItem>
-                    ))}
+              <Grid item xs={12}>
+                <FormControl fullWidth margin="normal">
+                  <InputLabel id="opening-label">Job opening</InputLabel>
+                  <Select labelId="opening-label" label="Job opening" value={openingId} onChange={(e) => chooseOpening(e.target.value)}>
+                    <MenuItem value=""><em>Describe a different role below</em></MenuItem>
+                    {openings.map((j) => <MenuItem key={j._id} value={j._id}>{j.title}{j.department ? ` — ${j.department}` : ''}{j.status && j.status !== 'Open' ? ` (${j.status})` : ''}</MenuItem>)}
                   </Select>
                 </FormControl>
+                <Typography variant="caption" color="text.secondary">Pick one of your openings and its requirements fill in automatically. You can still change them.</Typography>
               </Grid>
 
               <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" required disabled={!department}>
-                  <InputLabel id="job-title-label">Job Title</InputLabel>
-                  <Select
-                    labelId="job-title-label"
-                    value={jobTitle}
-                    label="Job Title"
-                    onChange={(e) => setJobTitle(e.target.value)}
-                  >
-                    {availableJobTitles.map((title) => (
-                      <MenuItem key={title} value={title}>{title}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Autocomplete freeSolo options={departments} inputValue={department} onInputChange={(e, v) => setDepartment(v)}
+                  renderInput={(params) => <TextField {...params} label="Department" margin="normal" required />} />
               </Grid>
 
               <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" required disabled={!department}>
-                  <InputLabel id="experience-label">Experience Requirements</InputLabel>
-                  <Select
-                    labelId="experience-label"
-                    value={experience}
-                    label="Experience Requirements"
-                    onChange={(e) => setExperience(e.target.value)}
-                  >
-                    {availableExperience.map((exp) => (
-                      <MenuItem key={exp} value={exp}>{exp}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <TextField label="Job title" fullWidth required margin="normal" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
               </Grid>
 
               <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" required disabled={!department}>
-                  <InputLabel id="education-label">Education Requirements</InputLabel>
-                  <Select
-                    labelId="education-label"
-                    value={education}
-                    label="Education Requirements"
-                    onChange={(e) => setEducation(e.target.value)}
-                  >
-                    {availableEducation.map((edu) => (
-                      <MenuItem key={edu} value={edu}>{edu}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <TextField label="Experience required" fullWidth required margin="normal" value={experience} onChange={(e) => setExperience(e.target.value)} placeholder="e.g. 3+ years" />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <TextField label="Education required" fullWidth required margin="normal" value={education} onChange={(e) => setEducation(e.target.value)} placeholder="e.g. B.E. / B.Tech in Computer Science" />
               </Grid>
 
               <Grid item xs={12}>
                 <Autocomplete
                   multiple
+                  freeSolo
                   id="skills-selection"
-                  options={availableSkills}
+                  options={[]}
                   value={selectedSkills}
                   onChange={handleSkillsChange}
                   renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      variant="outlined"
-                      label="Required Skills"
-                      placeholder="Select skills"
-                      required
-                      fullWidth
-                      margin="normal"
-                    />
+                    <TextField {...params} variant="outlined" label="Required skills" placeholder="Type a skill and press Enter" required fullWidth margin="normal" />
                   )}
-                  disabled={!department}
                   ChipProps={{ size: 'small' }}
                 />
-                <Typography variant="caption" color="text.secondary">
-                  Select at least 3 required skills for the position
-                </Typography>
+                <Typography variant="caption" color="text.secondary">Add the skills the role needs (at least 3 works best)</Typography>
               </Grid>
 
               <Grid item xs={12}>
@@ -918,8 +494,9 @@ Additional Requirements: ${jobRequirements}
                     variant="outlined"
                     startIcon={<SaveIcon />}
                     onClick={handleSaveResults}
+                    disabled={resultsSaved}
                   >
-                    Save Results
+                    {resultsSaved ? 'Saved' : 'Save Results'}
                   </Button>
                 </Box>
               </Box>

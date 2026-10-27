@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+
 import {
   Dialog,
   DialogTitle,
@@ -6,7 +7,6 @@ import {
   DialogActions,
   TextField,
   Button,
-  Grid,
   Typography,
   Box,
   IconButton,
@@ -21,24 +21,24 @@ import {
   Select,
   MenuItem,
   Autocomplete,
-  Stack
+  Stack,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
+
 import {
   Close as CloseIcon,
   Save as SaveIcon,
   Person as PersonIcon,
-  Security as SecurityIcon,
   Work as WorkIcon,
   ContactMail as ContactIcon,
   Psychology as SkillsIcon,
-  Phone as PhoneIcon,
-  Email as EmailIcon,
-  Badge as BadgeIcon,
-  LocationOn as LocationIcon
 } from '@mui/icons-material';
 import employeeService from '../../services/employeeService';
+
 import authService from '../../services/authService';
+
 import skillService from '../../services/skillService';
+
 
 const ProfileEditModal = ({ open, onClose, employee, onSaveSuccess, isAdmin }) => {
   const theme = useTheme();
@@ -120,7 +120,7 @@ const ProfileEditModal = ({ open, onClose, employee, onSaveSuccess, isAdmin }) =
       });
 
       fetchAllEmployees();
-      fetchRoles();
+      if (isAdmin) fetchRoles();      // only administrators may list or change roles
     }
   }, [employee]);
 
@@ -447,6 +447,7 @@ const ProfileEditModal = ({ open, onClose, employee, onSaveSuccess, isAdmin }) =
                 label="Department"
                 name="department"
                 value={formData.department}
+                disabled={!isAdmin}
                 onChange={handleChange}
                 sx={inputSx}
               />
@@ -458,6 +459,7 @@ const ProfileEditModal = ({ open, onClose, employee, onSaveSuccess, isAdmin }) =
                 label="Position / Job Title"
                 name="position"
                 value={formData.position}
+                disabled={!isAdmin}
                 onChange={handleChange}
                 sx={inputSx}
               />
@@ -469,6 +471,7 @@ const ProfileEditModal = ({ open, onClose, employee, onSaveSuccess, isAdmin }) =
                   name="employment_status"
                   value={formData.employment_status}
                   label="Employment Status"
+                  disabled={!isAdmin}
                   onChange={handleChange}
                 >
                   <MenuItem value="Active">Active</MenuItem>
@@ -487,6 +490,7 @@ const ProfileEditModal = ({ open, onClose, employee, onSaveSuccess, isAdmin }) =
                 label="Joining / Hire Date"
                 name="hire_date"
                 value={formData.hire_date}
+                disabled={!isAdmin}
                 onChange={handleChange}
                 InputLabelProps={{ shrink: true }}
                 sx={inputSx}

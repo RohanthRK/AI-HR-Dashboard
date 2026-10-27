@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+
 import { 
   Box, 
   Typography, 
@@ -9,17 +10,27 @@ import {
   useTheme,
   alpha
 } from '@mui/material';
+
 import { useSearchParams } from 'react-router-dom';
+
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+
 import RateReviewIcon from '@mui/icons-material/RateReview';
+
 import PsychologicalIcon from '@mui/icons-material/Psychology';
+
 
 // Tab Components (to be created)
 import OKRTab from './OKRTab';
+
 import PIPTab from './PIPTab';
+
 import ReviewsTab from './ReviewsTab';
+
 import SkillsTab from './SkillsTab';
+
 
 const Performance = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -72,9 +83,9 @@ const Performance = () => {
     <Container maxWidth="xl" sx={{ py: 4 }}>
       <Box sx={{ mb: 4 }}>
         <Typography 
-          variant="h3" 
+          variant="h4" 
+          component="h1"
           sx={{ 
-            fontWeight: 900, 
             mb: 1,
             textShadow: isDark ? '3px 3px 0px #000' : 'none'
           }}

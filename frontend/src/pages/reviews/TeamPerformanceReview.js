@@ -1,18 +1,15 @@
+import { formatDate } from '../../utils/format';
 import React, { useState, useEffect } from 'react';
-import { 
-  Container, 
-  Grid, 
-  Paper, 
-  Typography, 
-  Alert, 
-  AlertTitle, 
-  Box, 
-  Card, 
-  CardContent, 
+
+import {
+  Paper,
+  Typography,
+  Alert,
+  AlertTitle,
+  Box,
   Divider,
   CircularProgress,
   Button,
-  TextField,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -27,58 +24,32 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import GroupsIcon from '@mui/icons-material/Groups';
+
 import AssessmentIcon from '@mui/icons-material/Assessment';
+
 import HistoryEduIcon from '@mui/icons-material/HistoryEdu';
+
 import TeamSelector from './components/TeamSelector';
+
 import TeamReview from './components/TeamReview';
+
 import PageHeader from '../../components/PageHeader';
+
 import aiService from '../../services/aiService';
+
 import teamService from '../../services/teamService';
+
 import employeeService from '../../services/employeeService';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 import { useLocation, useNavigate } from 'react-router-dom';
 
-// Mock data in case API fails
-const mockTeamsData = {
-  total_departments: 5,
-  total_teams: 8,
-  total_employees: 42,
-  departments: [
-    {
-      id: 1,
-      name: "Engineering",
-      teams: [
-        {
-          id: 101,
-          name: "Frontend",
-          employee_count: 6,
-          employees: ["John Doe", "Jane Smith", "Bob Johnson"]
-        },
-        {
-          id: 102,
-          name: "Backend",
-          employee_count: 5,
-          employees: ["Alice Brown", "Tom Wilson"]
-        }
-      ]
-    },
-    {
-      id: 2,
-      name: "Design",
-      teams: [
-        {
-          id: 201,
-          name: "UI/UX",
-          employee_count: 4,
-          employees: ["Sarah Davis", "Mike Taylor"]
-        }
-      ]
-    }
-  ]
-};
+
 
 const TeamPerformanceReview = ({ isComponent = false }) => {
   const navigate = useNavigate();
@@ -155,7 +126,8 @@ const TeamPerformanceReview = ({ isComponent = false }) => {
           statsData = await aiService.getTeamStats();
         } catch (apiError) {
           console.error('Stats API call failed:', apiError);
-          statsData = mockTeamsData;
+          statsData = { departments: [] };
+          setError('Could not load team statistics from the server.');
         }
         
         setTeamStats({
@@ -233,6 +205,12 @@ const TeamPerformanceReview = ({ isComponent = false }) => {
           title="Team Performance Review"
           subtitle="Evaluate team performance across key metrics and provide actionable feedback"
         />
+      )}
+
+      {(error || submitError) && (
+        <Alert severity="error" onClose={() => { setError(null); setSubmitError(null); }} sx={{ mb: 3, borderRadius: 0, border: '3px solid #000' }}>
+          {submitError || error}
+        </Alert>
       )}
 
       {submitSuccess && (
@@ -350,7 +328,7 @@ const TeamPerformanceReview = ({ isComponent = false }) => {
                             </TableCell>
                             <TableCell sx={{ fontWeight: 700 }}>{review.reviewer || review.reviewer_name || 'Manager'}</TableCell>
                             <TableCell>
-                              {review.review_date || review.created_at ? new Date(review.review_date || review.created_at).toLocaleDateString() : 'Recent'}
+                              {review.review_date || review.created_at ? formatDate(review.review_date || review.created_at) : 'Recent'}
                             </TableCell>
                             <TableCell>
                               {score !== null ? (
@@ -364,7 +342,7 @@ const TeamPerformanceReview = ({ isComponent = false }) => {
                               <Chip 
                                 label={review.status || 'Completed'} 
                                 size="small" 
-                                sx={{ bgcolor: '#40c057', color: '#fff', fontWeight: 800, borderRadius: 0 }} 
+                                sx={{ bgcolor: '#40c057', color: '#000', fontWeight: 800, borderRadius: 0 }} 
                               />
                             </TableCell>
                             <TableCell>
@@ -472,7 +450,7 @@ const TeamPerformanceReview = ({ isComponent = false }) => {
                 <Box mt={3} pt={2} borderTop="1px solid #ddd">
                   <Typography variant="caption" color="textSecondary">REVIEW DATE: </Typography>
                   <Typography variant="caption" sx={{ fontWeight: 800 }}>
-                    {selectedReview.review_date || selectedReview.created_at ? new Date(selectedReview.review_date || selectedReview.created_at).toLocaleDateString() : 'N/A'}
+                    {selectedReview.review_date || selectedReview.created_at ? formatDate(selectedReview.review_date || selectedReview.created_at) : 'N/A'}
                   </Typography>
                 </Box>
               </Grid>

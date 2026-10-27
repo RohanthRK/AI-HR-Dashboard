@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+
 import {
   Dialog,
   DialogTitle,
@@ -6,33 +7,32 @@ import {
   DialogActions,
   TextField,
   Button,
-  Grid,
   Typography,
   Box,
   IconButton,
-  Divider,
   useTheme,
   CircularProgress,
   Chip,
   Slider,
   Stack,
   Paper,
-  Tooltip,
-  Autocomplete
+  Autocomplete,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Close as CloseIcon,
   Save as SaveIcon,
   Add as AddIcon,
   Delete as DeleteIcon,
   Psychology as SkillsIcon,
-  Star as StarIcon,
-  CheckCircle as CheckIcon,
-  OpenInNew as OpenInNewIcon
+  OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
+
 import skillService from '../../services/skillService';
+
 import { useSnackbar } from 'notistack';
+
 
 const DEFAULT_PROFICIENCY = 8;
 

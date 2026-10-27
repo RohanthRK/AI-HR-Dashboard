@@ -1,9 +1,11 @@
+import { formatDate } from '../../utils/format';
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  CircularProgress, 
+
+import {
+  Box,
+  Typography,
+  Paper,
+  CircularProgress,
   Button,
   Table,
   TableBody,
@@ -15,38 +17,45 @@ import {
   Chip,
   Alert,
   AlertTitle,
-  Snackbar,
   Container,
-  Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Grid,
   Divider,
   List,
   ListItem,
   ListItemText,
-  ListItemIcon,
   TextField,
   InputAdornment,
   MenuItem,
   FormControl,
   InputLabel,
-  Select
+  Select,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import PageHeader from '../../components/PageHeader';
+
 import { useNavigate } from 'react-router-dom';
+
 import reviewService from '../../services/reviewService';
+
 import employeeService from '../../services/employeeService';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 import AssessmentIcon from '@mui/icons-material/Assessment';
+
 import GroupsIcon from '@mui/icons-material/Groups';
+
 import PersonIcon from '@mui/icons-material/Person';
-import StarIcon from '@mui/icons-material/Star';
+
 import SearchIcon from '@mui/icons-material/Search';
+
 import FilterListIcon from '@mui/icons-material/FilterList';
+
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
+
 
 const MyReviews = ({ isComponent = false }) => {
   const navigate = useNavigate();
@@ -277,8 +286,8 @@ const MyReviews = ({ isComponent = false }) => {
                 <TableCell>
                   <Typography variant="body2">
                     {review.isPersonal 
-                      ? (review.review_date || review.submission_date ? new Date(review.review_date || review.submission_date).toLocaleDateString() : 'Recent')
-                      : (review.review_date || review.submission_date ? new Date(review.review_date || review.submission_date).toLocaleDateString() : (review.period || 'Current'))}
+                      ? (review.review_date || review.submission_date ? formatDate(review.review_date || review.submission_date) : 'Recent')
+                      : (review.review_date || review.submission_date ? formatDate(review.review_date || review.submission_date) : (review.period || 'Current'))}
                   </Typography>
                 </TableCell>
                 <TableCell>
@@ -448,7 +457,7 @@ const MyReviews = ({ isComponent = false }) => {
                     <Grid item xs={6}>
                       <Typography variant="caption" color="textSecondary">SUBMISSION DATE</Typography>
                       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                        {selectedReview.submission_date || selectedReview.created_at ? new Date(selectedReview.submission_date || selectedReview.created_at).toLocaleDateString() : 'N/A'}
+                        {selectedReview.submission_date || selectedReview.created_at ? formatDate(selectedReview.submission_date || selectedReview.created_at) : 'N/A'}
                       </Typography>
                     </Grid>
                   </Grid>

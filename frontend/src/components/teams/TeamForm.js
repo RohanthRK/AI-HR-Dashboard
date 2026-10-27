@@ -10,12 +10,12 @@ import {
   MenuItem,
   Autocomplete,
   Button,
-  Grid,
   Chip,
   Alert,
   CircularProgress,
-  alpha
+  alpha,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Save as SaveIcon,
   Cancel as CancelIcon
@@ -24,8 +24,6 @@ import aiService from '../../services/aiService';
 import employeeService from '../../services/employeeService';
 import axios from '../../services/api';
 
-const rawUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
-const API_URL = rawUrl.endsWith('/api') ? rawUrl : `${rawUrl}/api`;
 
 const TeamForm = ({ team = null, isEdit = false }) => {
   const navigate = useNavigate();
@@ -51,14 +49,12 @@ const TeamForm = ({ team = null, isEdit = false }) => {
     const fetchDepartmentsAndEmployees = async () => {
       try {
         setLoading(true);
-        console.log('Fetching all employees for team selection...');
         
         const [allEmployees, teamStats] = await Promise.all([
           employeeService.getAllEmployees(),
           aiService.getTeamStats()
         ]);
         
-        console.log(`Successfully fetched ${allEmployees.length} employees`);
         
         const deptList = teamStats.departments.map(dept => dept.name);
         setDepartments(deptList);
@@ -139,13 +135,10 @@ const TeamForm = ({ team = null, isEdit = false }) => {
         return;
       }
       
-      const authHeader = { Authorization: `Bearer ${token}` };
-      console.log('SYNC: Submitting team data with token present');
-
       if (isEdit && team) {
-        await axios.put(`${API_URL}/teams/teams/${team.id}/mongodb_update/`, apiData, { headers: authHeader });
+        await axios.put(`/api/teams/teams/${team.id}/mongodb_update/`, apiData);
       } else {
-        await axios.post(`${API_URL}/teams/teams/mongodb_create/`, apiData, { headers: authHeader });
+        await axios.post('/api/teams/teams/mongodb_create/', apiData);
       }
       
       setSuccessMessage(isEdit ? 'Team updated successfully!' : 'Team created successfully!');

@@ -10,10 +10,10 @@ from django.views.decorators.csrf import csrf_exempt
 from functools import wraps
 
 from hr_backend.db import reviews, employees, team_reviews, users, teams
+from utils.auth_utils import is_privileged, is_admin, owns_employee, forbidden, can_see_employee, visible_refs
 from utils.api_utils import (
     serialize_document, 
-    create_crud_endpoints,
-    validate_required_fields
+    create_crud_endpoints
 )
 
 # Standard CRUD for reviews (internal use)
@@ -30,6 +30,16 @@ def require_auth(view_func):
             return JsonResponse({'error': 'Unauthorized', 'message': 'Authentication required'}, status=401)
         return view_func(request, *args, **kwargs)
     return _wrapped_view
+
+def _my_refs(request):
+    """Every identifier the logged-in employee can appear under in a review (_id string and employee code)."""
+    mine = str(getattr(request, 'employee_id', '') or '')
+    refs = {mine} if mine else set()
+    doc = employees.find_one({'employee_id': mine}) or (employees.find_one({'_id': ObjectId(mine)}) if len(mine) == 24 else None)
+    if doc:
+        refs |= {str(doc['_id']), doc.get('employee_id', '')}
+    return [r for r in refs if r]
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -51,7 +61,17 @@ def list_reviews(request):
         query['employee_id'] = employee_id
     if status:
         query['status'] = status
-        
+    # access limits are ANDed in last so a query-string filter can never widen them
+    if not is_privileged(request):
+        limit = {'employee_id': {'$in': _my_refs(request)}}        # employees only see reviews written about them
+    elif not is_admin(request):
+        scope = sorted(visible_refs(request) or [])                 # managers: their reports, plus reviews they wrote or received
+        limit = {'$or': [{'employee_id': {'$in': scope}}, {'reviewer_id': {'$in': scope}}]}
+    else:
+        limit = None
+    if limit:
+        query = {'$and': [query, limit]} if query else limit
+
     try:
         results = list(reviews.find(query).sort('review_date', -1))
         serialized = [serialize_document(doc) for doc in results]
@@ -368,6 +388,12 @@ def submit_review(request, review_id):
     Submit or update an existing review
     Endpoint: PUT /api/reviews/{review_id}/submit
     """
+    if not is_privileged(request):
+        return forbidden('Only managers and HR can submit reviews.')
+    if owns_employee(request, review_id) and not is_admin(request):
+        return forbidden('You cannot review yourself.')
+    if not can_see_employee(request, review_id):
+        return forbidden('You can only review the people who report to you.')
     try:
         data = json.loads(request.body)
         
@@ -452,7 +478,6 @@ def submit_review(request, review_id):
     except Exception as e:
         import traceback
         error_msg = f"Error in submit_review: {str(e)}\n{traceback.format_exc()}"
-        print(error_msg)
         return JsonResponse({'error': 'Server error', 'message': str(e)}, status=500)
 
 @csrf_exempt
@@ -484,6 +509,8 @@ def get_review_by_id(request, review_id):
                 # Standardize fields for the view
                 s_doc['reviewer_name'] = resolve_reviewer_name(s_doc.get('reviewer_id'), s_doc.get('reviewer_name'))
                 s_doc['subject_name'] = s_doc.get('team_name') or 'Team'
+                if not (is_privileged(request) or owns_employee(request, s_doc.get('reviewer_id'))):
+                    return forbidden()
                 return JsonResponse(s_doc)
             
         if not doc:
@@ -491,6 +518,9 @@ def get_review_by_id(request, review_id):
             
         s_doc = serialize_document(doc)
         s_doc['type'] = 'Individual'
+        if not (owns_employee(request, s_doc.get('employee_id')) or owns_employee(request, s_doc.get('reviewer_id'))
+                or (is_privileged(request) and can_see_employee(request, s_doc.get('employee_id')))):
+            return forbidden()
         s_doc['reviewer_name'] = resolve_reviewer_name(s_doc.get('reviewer_id'), s_doc.get('reviewer_name'))
         return JsonResponse(s_doc)
     except Exception as e:

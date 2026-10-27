@@ -15,6 +15,11 @@ urlpatterns = [
     
     # Summary/Report endpoints
     path('summary/', views.attendance_summary, name='attendance_summary'),
+    path('daily/', views.daily_attendance, name='daily_attendance'),
+    path('team/', views.team_attendance, name='team_attendance'),
+    path('month/', views.month_view, name='attendance_month'),
+    path('overview/', views.overview, name='attendance_overview'),
+    path('expected-hours/<str:employee_id>/', views.set_expected_hours, name='set_expected_hours'),
     
     # Attendance CRUD (Admin/HR) and specific endpoints
     path('new/', views.create_attendance, name='create_attendance'),

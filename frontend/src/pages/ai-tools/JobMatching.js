@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
+
 import {
   Box,
   Typography,
   Paper,
-  Grid,
-  TextField,
   Button,
   CircularProgress,
   Card,
@@ -14,10 +14,6 @@ import {
   Divider,
   Chip,
   Alert,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemAvatar,
   FormControl,
   InputLabel,
   MenuItem,
@@ -30,192 +26,24 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  IconButton,
-  Tooltip,
-  Rating
+  Rating,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Search as SearchIcon,
   Work as WorkIcon,
   Person as PersonIcon,
   CheckCircle as CheckCircleIcon,
-  MoreVert as MoreVertIcon,
-  FilterList as FilterListIcon,
-  Sort as SortIcon,
   Star as StarIcon,
-  StarBorder as StarBorderIcon
+  StarBorder as StarBorderIcon,
 } from '@mui/icons-material';
-import aiService from '../../services/aiService';
 import axios from '../../services/api';
+
 import { toast } from 'react-hot-toast';
+
 import employeeService from '../../services/employeeService';
+import JobDialog from '../../components/recruitment/JobDialog';
 
-// Keep mock data as fallback in case the API fails
-const mockEmployees = [
-  {
-    id: 'emp001',
-    name: 'John Doe',
-    position: 'Senior Developer',
-    department: 'Engineering',
-    skills: ['JavaScript', 'React', 'Node.js', 'TypeScript', 'AWS'],
-    experience: 6,
-    education: 'MS Computer Science',
-    availability: 'Available',
-    photo: 'https://mui.com/static/images/avatar/1.jpg'
-  },
-  {
-    id: 'emp002',
-    name: 'Jane Smith',
-    position: 'UX Designer',
-    department: 'Product',
-    skills: ['UI Design', 'User Research', 'Figma', 'Sketch', 'Prototyping'],
-    experience: 4,
-    education: 'BFA Design',
-    availability: 'Available in 2 weeks',
-    photo: 'https://mui.com/static/images/avatar/2.jpg'
-  },
-  {
-    id: 'emp003',
-    name: 'Michael Brown',
-    position: 'Product Manager',
-    department: 'Product',
-    skills: ['Product Strategy', 'Agile', 'User Stories', 'Market Research', 'Data Analysis'],
-    experience: 7,
-    education: 'MBA',
-    availability: 'On project until June',
-    photo: 'https://mui.com/static/images/avatar/3.jpg'
-  },
-  {
-    id: 'emp004',
-    name: 'Emily Wilson',
-    position: 'DevOps Engineer',
-    department: 'Engineering',
-    skills: ['Docker', 'Kubernetes', 'CI/CD', 'AWS', 'Terraform'],
-    experience: 5,
-    education: 'BS Computer Engineering',
-    availability: 'Available',
-    photo: 'https://mui.com/static/images/avatar/4.jpg'
-  },
-  {
-    id: 'emp005',
-    name: 'Robert Garcia',
-    position: 'Data Scientist',
-    department: 'Analytics',
-    skills: ['Python', 'Machine Learning', 'SQL', 'Data Visualization', 'Statistics'],
-    experience: 3,
-    education: 'PhD Data Science',
-    availability: 'Available in 1 week',
-    photo: 'https://mui.com/static/images/avatar/5.jpg'
-  }
-];
-
-const mockJobs = [
-  {
-    id: 'job001',
-    title: 'Frontend Developer',
-    department: 'Engineering',
-    location: 'San Francisco, CA',
-    requiredSkills: ['JavaScript', 'React', 'CSS', 'HTML'],
-    requiredExperience: '3+ years',
-    requiredEducation: 'BS Computer Science or equivalent',
-    status: 'Open'
-  },
-  {
-    id: 'job002',
-    title: 'UX/UI Designer',
-    department: 'Product',
-    location: 'New York, NY',
-    requiredSkills: ['UI Design', 'User Research', 'Figma', 'Prototyping'],
-    requiredExperience: '2+ years',
-    requiredEducation: 'Design degree or equivalent',
-    status: 'Open'
-  },
-  {
-    id: 'job003',
-    title: 'Data Engineer',
-    department: 'Analytics',
-    location: 'Remote',
-    requiredSkills: ['Python', 'SQL', 'ETL', 'Data Modeling'],
-    requiredExperience: '4+ years',
-    requiredEducation: 'BS in Computer Science or related field',
-    status: 'Open'
-  }
-];
-
-const mockMatches = [
-  {
-    job_id: 'job001',
-    employee_id: 'emp001',
-    match_score: 95,
-    skill_match: 90,
-    experience_match: 100,
-    education_match: 95,
-    overall_fit: 'Excellent',
-    notes: 'Perfect match for the position. Has all required skills plus additional experience with TypeScript and AWS.',
-    employee_name: 'John Doe',
-    position: 'Senior Developer',
-    department: 'Engineering',
-    job_title: 'Frontend Developer',
-    matching_skills: ['JavaScript', 'React'],
-    required_skills: ['JavaScript', 'React', 'CSS', 'HTML'],
-    experience: '6 years',
-    suitability: 95
-  },
-  {
-    job_id: 'job001',
-    employee_id: 'emp004',
-    match_score: 75,
-    skill_match: 60,
-    experience_match: 90,
-    education_match: 80,
-    overall_fit: 'Good',
-    notes: 'Good technical background but missing some frontend specific skills. Would need training on React.',
-    employee_name: 'Emily Wilson',
-    position: 'DevOps Engineer',
-    department: 'Engineering',
-    job_title: 'Frontend Developer',
-    matching_skills: ['JavaScript'],
-    required_skills: ['JavaScript', 'React', 'CSS', 'HTML'],
-    experience: '5 years',
-    suitability: 75
-  },
-  {
-    job_id: 'job002',
-    employee_id: 'emp002',
-    match_score: 98,
-    skill_match: 100,
-    experience_match: 95,
-    education_match: 100,
-    overall_fit: 'Excellent',
-    notes: 'Ideal candidate with exactly the right skill set and experience.',
-    employee_name: 'Jane Smith',
-    position: 'UX Designer',
-    department: 'Product',
-    job_title: 'UX/UI Designer',
-    matching_skills: ['UI Design', 'User Research', 'Figma', 'Prototyping'],
-    required_skills: ['UI Design', 'User Research', 'Figma', 'Prototyping'],
-    experience: '4 years',
-    suitability: 98
-  },
-  {
-    job_id: 'job003',
-    employee_id: 'emp005',
-    match_score: 85,
-    skill_match: 80,
-    experience_match: 90,
-    education_match: 100,
-    overall_fit: 'Very Good',
-    notes: 'Strong data science background. Some additional training on ETL processes would be beneficial.',
-    employee_name: 'Robert Garcia',
-    position: 'Data Scientist',
-    department: 'Analytics',
-    job_title: 'Data Engineer',
-    matching_skills: ['Python', 'SQL'],
-    required_skills: ['Python', 'SQL', 'ETL', 'Data Modeling'],
-    experience: '3 years',
-    suitability: 85
-  }
-];
 
 const JobMatching = () => {
   // State for job selection
@@ -238,6 +66,29 @@ const JobMatching = () => {
 
   // State for tabs
   const [tabValue, setTabValue] = useState(0);
+  const [jobDialogOpen, setJobDialogOpen] = useState(false);
+
+  const mapJob = (job) => ({
+    id: job._id,
+    title: job.title,
+    department: job.department || 'N/A',
+    location: job.location || 'Not specified',
+    requiredSkills: (typeof job.skills === 'string' ? job.skills.split(',') : job.skills || [])
+      .map((skill) => skill.trim()).filter(Boolean),
+    requiredExperience: job.experience ? (/^\d+(\.\d+)?$/.test(String(job.experience)) ? `${job.experience}+ years` : job.experience) : 'Not specified',
+    requiredEducation: job.education || 'Not specified',
+    status: job.status,
+  });
+
+  // A new opening was created here: add it to the list and select it
+  const handleJobSaved = (job) => {
+    const mapped = mapJob(job);
+    setJobs((prev) => [mapped, ...prev.filter((j) => j.id !== mapped.id)]);
+    setSelectedJob(mapped.id);
+    setSelectedJobDetails(mapped);
+    setMatchResults([]);
+    toast.success(`Opening “${job.title}” created. Click Find Matches to see who fits.`);
+  };
 
   // Handle job selection
   const handleJobChange = (event) => {
@@ -259,239 +110,45 @@ const JobMatching = () => {
     }
 
     setIsMatching(true);
-
     try {
-      // Call the actual API endpoint for job matching
-      console.log(`Finding matches for job ID: ${selectedJob}`);
-
-      let response;
-      try {
-        // Try POST request first as shown in component
-        response = await axios.post('/api/ai/job-matching/', {
-          job_id: selectedJob
-        });
-        console.log('Job matching POST response:', response);
-      } catch (postError) {
-        console.warn('POST request failed, trying GET request instead:', postError);
-        // If POST fails, try GET with query params as shown in backend
-        response = await axios.get(`/api/ai/job-matching/?job_id=${selectedJob}`);
-        console.log('Job matching GET response:', response);
-      }
-
-      let matchesData = [];
-
-      if (response.data) {
-        // Try different possible response structures
-        if (Array.isArray(response.data)) {
-          matchesData = response.data;
-        } else if (response.data.matches && Array.isArray(response.data.matches)) {
-          matchesData = response.data.matches;
-        } else {
-          // Look for any array in the response
-          for (const key in response.data) {
-            if (Array.isArray(response.data[key])) {
-              matchesData = response.data[key];
-              break;
-            }
-          }
-        }
-      }
-
-      if (matchesData.length > 0) {
-        // Enrich match data with employee information if it's missing
-        const enrichedMatches = matchesData.map(match => {
-          // If the match doesn't have complete employee information, try to find it
-          if ((!match.employee_name && !match.employee?.name) ||
-            (!match.position && !match.employee?.position)) {
-            const employeeId = match.employee_id;
-            const employee = employees.find(emp => emp.id?.toString() === employeeId?.toString());
-
-            if (employee) {
-              console.log('Enriching match with employee data:', employee);
-              return {
-                ...match,
-                employee_name: employee.name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim(),
-                position: employee.position || 'DATA Yet to be added',
-                department: match.department || employee.department || 'DATA Yet to be added'
-              };
-            }
-          }
-          return match;
-        });
-
-        setMatchResults(enrichedMatches);
+      const response = await axios.post('/api/ai/job-matching/', { job_id: selectedJob });
+      const matches = Array.isArray(response.data) ? response.data : [];
+      setMatchResults(matches);
+      if (matches.length > 0) {
         setTabValue(1); // Switch to results tab
-        toast.success(`Found ${enrichedMatches.length} potential matches`);
+        toast.success(`Found ${matches.length} potential matches`);
       } else {
-        console.warn('No matches found in API response, using mock data filtered by selected job');
-        // Filter mock data to match selected job
-        const mockMatched = mockMatches.filter(match => match.job_id === selectedJob);
-        if (mockMatched.length > 0) {
-          setMatchResults(mockMatched);
-          setTabValue(1);
-          toast.info(`Found ${mockMatched.length} potential matches (from mock data)`);
-        } else {
-          setMatchResults([]);
-          toast.info('No matches found for the selected criteria');
-        }
+        toast('No employees match the required skills of this job');
       }
     } catch (error) {
       console.error('Error finding matches:', error);
-      toast.error('Failed to find matches. Using mock data as fallback.');
-
-      // Filter mock data to match selected job as fallback
-      const mockMatched = mockMatches.filter(match => match.job_id === selectedJob);
-      if (mockMatched.length > 0) {
-        setMatchResults(mockMatched);
-        setTabValue(1);
-      } else {
-        setMatchResults([]);
-      }
+      setMatchResults([]);
+      toast.error(error.response?.data?.error || 'Failed to find matches.');
     } finally {
       setIsMatching(false);
     }
   };
 
-  // Load jobs and employees data on component mount
+  // Load job openings (recruitment board) and employees on mount
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
-      console.log('Loading initial data...');
-
-      // Flag to track if we're using mock data
-      let usingMockData = false;
-
       try {
-        // Try to load job openings from the API
-        let jobsData = [];
-        try {
-          const jobsResponse = await axios.get('/api/jobs/');
-          console.log('Jobs API response:', jobsResponse);
-
-          if (jobsResponse.data && Array.isArray(jobsResponse.data)) {
-            jobsData = jobsResponse.data;
-          } else if (jobsResponse.data && typeof jobsResponse.data === 'object') {
-            jobsData = jobsResponse.data.results || [];
-          }
-        } catch (jobsError) {
-          console.error('Error loading jobs:', jobsError);
-          usingMockData = true;
-          jobsData = mockJobs;
-        }
-
-        // If no jobs were returned from API, use mock data
-        if (jobsData.length === 0) {
-          console.warn('No job data in API response, using mock data');
-          jobsData = mockJobs;
-          usingMockData = true;
-        }
-
+        const jobsResponse = await axios.get('/api/recruitment/jobs/');
+        const jobsData = (jobsResponse.data.jobs || []).map(mapJob);
         setJobs(jobsData);
         if (jobsData.length > 0) {
           setSelectedJob(jobsData[0].id);
+          setSelectedJobDetails(jobsData[0]);
         }
-        console.log(`Loaded ${jobsData.length} jobs`);
-
-        // Try to load employee data
-        let employeeData = [];
-        try {
-          // Use the dedicated service function which handles fallbacks and mapping
-          employeeData = await employeeService.getAllEmployees({
-            // You might want to pass specific params if needed, e.g., limit
-            _t: new Date().getTime() // Keep cache busting
-          });
-          console.log('Employees service response:', employeeData);
-
-          // Service already returns an array or empty array on failure,
-          // so direct assignment is sufficient. Error handling is inside the service.
-
-        } catch (employeeServiceError) {
-          // Catch errors specifically from the service call itself (e.g., network error before API call)
-          // The service internally handles API errors and returns [] in those cases.
-          console.error('Error calling employee service:', employeeServiceError);
-          usingMockData = true;
-          employeeData = mockEmployees; // Fallback to mock if service call fails entirely
-        }
-
-        // If the service returned an empty array (meaning all API attempts failed), use mock data
-        if (employeeData.length === 0) {
-          console.warn('Employee service returned no data, using mock data');
-          employeeData = mockEmployees;
-          usingMockData = true; // Ensure flag is set if service returns empty
-        }
-
-        setEmployees(employeeData);
-        console.log(`Loaded ${employeeData.length} employees`);
-
-        // Try to get job matches data
-        let matchesData = [];
-        try {
-          const initialMatches = await aiService.getJobMatches();
-          console.log('Initial Matches Data:', initialMatches);
-
-          if (Array.isArray(initialMatches) && initialMatches.length > 0) {
-            matchesData = initialMatches;
-          } else if (initialMatches && Array.isArray(initialMatches.matches)) {
-            matchesData = initialMatches.matches;
-          } else if (initialMatches && typeof initialMatches === 'object') {
-            // Extract matches from response object if it exists
-            for (const key in initialMatches) {
-              if (Array.isArray(initialMatches[key])) {
-                matchesData = initialMatches[key];
-                break;
-              }
-            }
-          }
-        } catch (matchError) {
-          console.error('Error fetching matches:', matchError);
-          usingMockData = true;
-          matchesData = mockMatches;
-        }
-
-        // If no matches were returned or matches are empty, use mock data
-        if (matchesData.length === 0) {
-          console.warn('No matches in API response, using mock data');
-          matchesData = mockMatches;
-          usingMockData = true;
-        }
-
-        // Enrich match data with employee information if needed
-        if (!usingMockData) {
-          matchesData = matchesData.map(match => {
-            const employeeId = match.employee_id;
-            const employee = employeeData.find(emp => emp.id?.toString() === employeeId?.toString());
-
-            if (employee) {
-              return {
-                ...match,
-                employee_name: employee.name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim(),
-                position: employee.position || 'DATA Yet to be added',
-                department: match.department || employee.department || 'DATA Yet to be added'
-              };
-            }
-            return match;
-          });
-        }
-
-        setMatchResults(matchesData);
-
-        // Set error message if we're using mock data
-        if (usingMockData) {
-          setError('Failed to load data from server. Using mock data as fallback.');
-        }
-
+        const employeeData = await employeeService.getAllEmployees({ _t: new Date().getTime() });
+        setEmployees(Array.isArray(employeeData) ? employeeData : []);
       } catch (err) {
         console.error('Error loading data:', err);
-        setError('Failed to load data from server. Using mock data as fallback.');
-
-        // Use mock data as fallback
-        setJobs(mockJobs);
-        setEmployees(mockEmployees);
-        setMatchResults(mockMatches);
+        setError('Could not load job openings from the server.');
       } finally {
         setIsLoading(false);
-        console.log('Finished loading data.');
       }
     };
 
@@ -500,9 +157,16 @@ const JobMatching = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        AI Job Matching
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+        <Typography variant="h4" component="h1">
+          AI Job Matching
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" component={RouterLink} to="/recruitment">Manage openings &amp; candidates</Button>
+          <Button variant="contained" onClick={() => setJobDialogOpen(true)}>+ New job opening</Button>
+        </Box>
+      </Box>
+      <JobDialog open={jobDialogOpen} onClose={() => setJobDialogOpen(false)} onSaved={handleJobSaved} />
 
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>

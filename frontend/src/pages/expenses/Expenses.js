@@ -13,6 +13,7 @@ import { IconButton, Tooltip } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CommentIcon from '@mui/icons-material/Comment';
 import { useSnackbar } from 'notistack';
+import { formatDate, formatMoney } from '../../utils/format';
 
 const Expenses = () => {
     const [expenses, setExpenses] = useState([]);
@@ -31,6 +32,7 @@ const Expenses = () => {
 
     const user = authService.getCurrentUser();
     const isAdmin = authService.isAdmin();
+    const showWho = expenses.some((e) => e.employee_name && e.employee_id !== user?.employee_id);
 
     const fetchExpenses = async () => {
         try {
@@ -102,7 +104,7 @@ const Expenses = () => {
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
                 <Typography variant="h4" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
-                    My Expenses
+                    {showWho ? 'Expense Claims' : 'My Expenses'}
                 </Typography>
                 <Button
                     variant="contained"
@@ -126,6 +128,7 @@ const Expenses = () => {
                             <TableHead>
                                 <TableRow sx={{ bgcolor: 'action.hover' }}>
                                     <TableCell sx={{ fontWeight: 'bold' }}>Title</TableCell>
+                                    {showWho && <TableCell sx={{ fontWeight: 'bold' }}>Employee</TableCell>}
                                     <TableCell sx={{ fontWeight: 'bold' }}>Category</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>Amount</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>Date Submitted</TableCell>
@@ -136,17 +139,18 @@ const Expenses = () => {
                             <TableBody>
                                 {expenses.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                                        <TableCell colSpan={showWho ? 7 : 6} align="center" sx={{ py: 3 }}>
                                             No expenses claimed yet.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
                                     expenses.map((expense) => (
                                         <TableRow key={expense._id}>
-                                            <TableCell>{expense.title}</TableCell>
+                                            <TableCell>{expense.title || expense.description}</TableCell>
+                                            {showWho && <TableCell>{expense.employee_name || '-'}</TableCell>}
                                             <TableCell><Chip label={expense.category} size="small" variant="outlined" /></TableCell>
-                                            <TableCell>${expense.amount ? parseFloat(expense.amount).toFixed(2) : '0.00'}</TableCell>
-                                            <TableCell>{expense.submittedAt ? new Date(expense.submittedAt).toLocaleDateString() : 'N/A'}</TableCell>
+                                            <TableCell>{formatMoney(expense.amount || 0)}</TableCell>
+                                            <TableCell>{formatDate(expense.submittedAt || expense.date, 'N/A')}</TableCell>
                                             <TableCell>
                                                 <Chip
                                                     label={expense.status}

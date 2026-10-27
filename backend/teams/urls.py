@@ -1,15 +1,9 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import TeamViewSet, ProjectViewSet, mongodb_create, mongodb_update, debug_teams, mongodb_list
+from django.urls import path
 
-router = DefaultRouter()
-router.register(r'teams', TeamViewSet)
-router.register(r'projects', ProjectViewSet)
+from .views import mongodb_create, mongodb_update, mongodb_list
 
 urlpatterns = [
-    path('debug/', debug_teams, name='debug_teams'),
     path('mongodb_list/', mongodb_list, name='mongodb_list_teams'),
     path('teams/mongodb_create/', mongodb_create, name='mongodb_create_team'),
     path('teams/<str:pk>/mongodb_update/', mongodb_update, name='mongodb_update_team'),
-    path('', include(router.urls)),
 ]

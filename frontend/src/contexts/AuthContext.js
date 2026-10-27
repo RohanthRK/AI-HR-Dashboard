@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import authService from '../services/authService';
+import api from '../services/api';
 
 // Create context
 const AuthContext = createContext();
@@ -34,6 +35,27 @@ export const AuthProvider = ({ children }) => {
       }
     }
     setLoading(false);
+  }, [token]);
+
+  // Keep the session alive: refresh the token when it is within 20 minutes of expiring
+  useEffect(() => {
+    if (!token) return undefined;
+    const check = async () => {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        const secondsLeft = payload.exp - Date.now() / 1000;
+        if (secondsLeft > 0 && secondsLeft < 20 * 60) {
+          const res = await api.post('/api/auth/refresh/');
+          localStorage.setItem('token', res.data.token);
+          setToken(res.data.token);
+        }
+      } catch (e) {
+        // an invalid token is handled by the 401 interceptor on the next request
+      }
+    };
+    check();
+    const timer = setInterval(check, 5 * 60 * 1000);
+    return () => clearInterval(timer);
   }, [token]);
 
   // Login handler

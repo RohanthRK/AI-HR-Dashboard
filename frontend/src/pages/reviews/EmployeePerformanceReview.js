@@ -1,40 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Container, 
-  Grid, 
-  Paper, 
-  Typography, 
-  Alert, 
-  AlertTitle, 
-  Box, 
-  Card, 
-  CardContent, 
+
+import {
+  Container,
+  Paper,
+  Typography,
+  Alert,
+  AlertTitle,
+  Box,
   Avatar,
   Chip,
   Divider,
   CircularProgress,
   Button,
   TextField,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
   Rating,
   FormHelperText,
-  IconButton
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import { useParams, useNavigate } from 'react-router-dom';
+
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import PersonIcon from '@mui/icons-material/Person';
+
 import EmailIcon from '@mui/icons-material/Email';
+
 import PhoneIcon from '@mui/icons-material/Phone';
-import WorkIcon from '@mui/icons-material/Work';
+
 import PageHeader from '../../components/PageHeader';
+
 import employeeService from '../../services/employeeService';
+
 import reviewService from '../../services/reviewService';
+
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+
 
 const EmployeePerformanceReview = () => {
   const { employeeId } = useParams();
@@ -185,7 +187,6 @@ const EmployeePerformanceReview = () => {
         }
       };
       
-      console.log('Submitting review for employee:', formattedReview);
       
       // Submit review
       await reviewService.submitReview(employeeId, formattedReview);

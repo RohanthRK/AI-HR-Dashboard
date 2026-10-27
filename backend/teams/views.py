@@ -1,391 +1,166 @@
-from django.shortcuts import render
-from rest_framework import viewsets, status, filters
-from rest_framework.response import Response
-from rest_framework.decorators import action, api_view
-from django_filters.rest_framework import DjangoFilterBackend
-from .models import Team, Project
-from .serializers import (
-    TeamSerializer, 
-    TeamCreateUpdateSerializer,
-    ProjectSerializer
-)
-from employees.models import Employee
-from hr_backend.db import teams as teams_collection, employees as employees_collection
-from bson.objectid import ObjectId
-import json
+"""
+Teams (MongoDB `Teams` collection).
+
+A team belongs to a department and has a manager, an optional leader and members. Rules kept here:
+  * an employee is in exactly one team, so adding them to a team takes them out of their previous one;
+  * `employees` (rich member cards), `members` (ids) and each employee's `team` / `team_id` always agree;
+  * only administrators create teams; a team's own manager or leader may edit it (administrators may edit any).
+"""
+import datetime
+
+from bson import ObjectId
 from django.http import JsonResponse
-from datetime import datetime
-import traceback
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from hr_backend.db import teams as teams_collection, employees as employees_collection, departments as departments_collection
 from utils.api_utils import serialize_document
-from utils.auth_utils import require_role, require_team_leader_or_role
+from utils.auth_utils import is_admin, is_privileged, forbidden
+from utils.hr_common import body
 
-@api_view(['GET'])
-def debug_teams(request):
-    """
-    Return all teams from MongoDB for debugging purposes
-    """
+
+def _now():
+    return datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+
+
+def _oid(value):
     try:
-        teams = list(teams_collection.find({}))
-        serialized_teams = [serialize_document(team) for team in teams]
-        return Response(serialized_teams, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return ObjectId(str(value))
+    except Exception:
+        return None
 
-@api_view(['GET'])
+
+def _employee_card(emp, leader_id, manager_id):
+    return {
+        'id': str(emp['_id']),
+        'name': f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip(),
+        'position': emp.get('position', 'Team Member'),
+        'email': emp.get('email', ''),
+        'phone': emp.get('phone', ''),
+        'hire_date': emp.get('hire_date', ''),
+        'employee_id': emp.get('employee_id', str(emp['_id'])),
+        'is_leader': str(emp['_id']) == str(leader_id or ''),
+        'is_manager': str(emp['_id']) == str(manager_id or ''),
+    }
+
+
+def _apply_members(team_id, name, department, member_ids, leader_id, manager_id):
+    """
+    Make `member_ids` the team's membership everywhere: the team document, the members' own records, and the
+    teams they were in before. Returns the member cards. Unknown ids are ignored.
+    """
+    wanted = []
+    for ref in member_ids:
+        emp = employees_collection.find_one({'_id': _oid(ref)}) if _oid(ref) else None
+        if emp and str(emp['_id']) not in [str(w['_id']) for w in wanted]:
+            wanted.append(emp)
+    wanted_ids = {str(e['_id']) for e in wanted}
+
+    # leave the old team(s)
+    for other in teams_collection.find({'_id': {'$ne': team_id}, 'members': {'$in': list(wanted_ids)}}):
+        keep = [m for m in other.get('members', []) if str(m) not in wanted_ids]
+        teams_collection.update_one({'_id': other['_id']}, {'$set': {
+            'members': keep,
+            'employees': [c for c in other.get('employees', []) if str(c.get('id')) not in wanted_ids],
+            'updated_at': _now()}})
+    # people who were in this team and no longer are
+    current = teams_collection.find_one({'_id': team_id}) or {}
+    for gone in {str(m) for m in current.get('members', [])} - wanted_ids:
+        employees_collection.update_one({'_id': _oid(gone)}, {'$set': {'team': '', 'team_id': '', 'teams': []}})
+
+    cards = [_employee_card(e, leader_id, manager_id) for e in wanted]
+    for emp, card in zip(wanted, cards):
+        employees_collection.update_one({'_id': emp['_id']}, {'$set': {
+            'team': name, 'team_id': str(team_id),
+            'teams': [{'name': name, 'department': department, 'is_leader': card['is_leader'], 'is_manager': card['is_manager']}]}})
+    return cards
+
+
+def _requester(request):
+    ref = str(getattr(request, 'employee_id', '') or '')
+    return employees_collection.find_one({'_id': _oid(ref)}) or employees_collection.find_one({'employee_id': ref}) if ref else None
+
+
+def _clean(data, existing=None):
+    """Validated team fields from a request body; returns (fields, error message)."""
+    existing = existing or {}
+    name = str(data.get('name', existing.get('name', '')) or '').strip()
+    department = str(data.get('department', existing.get('department', '')) or '').strip()
+    if not name:
+        return None, 'Team name is required'
+    if not department:
+        return None, 'Department is required'
+    if len(name) > 80:
+        return None, 'Team name is too long'
+    clash = teams_collection.find_one({'name': {'$regex': '^' + __import__('re').escape(name) + '$', '$options': 'i'},
+                                       '_id': {'$ne': existing.get('_id')}})
+    if clash:
+        return None, f"A team called '{name}' already exists"
+    dept_doc = departments_collection.find_one({'name': department})
+    ids = data.get('employee_ids', None)
+    if ids is None:
+        ids = [str(m) for m in existing.get('members', [])]
+    if isinstance(ids, str):
+        ids = [ids]
+    if not isinstance(ids, list):
+        return None, 'employee_ids must be a list'
+    leader = data.get('leader_id', existing.get('leader_id')) or None
+    manager = data.get('manager_id', existing.get('manager_id')) or None
+    for ref in (leader, manager):
+        if ref and not employees_collection.find_one({'_id': _oid(ref)}):
+            return None, 'The chosen leader or manager does not exist'
+    members = list(dict.fromkeys([str(i) for i in ids] + [str(x) for x in (leader, manager) if x]))
+    return {
+        'name': name, 'department': department, 'department_id': str(dept_doc['_id']) if dept_doc else existing.get('department_id', ''),
+        'description': str(data.get('description', existing.get('description', '')) or '').strip()[:500] or f'{name} in the {department} department',
+        'leader_id': str(leader) if leader else None, 'manager_id': str(manager) if manager else None, 'members': members,
+    }, None
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
 def mongodb_list(request):
-    """
-    Official MongoDB list endpoint for teams
-    """
-    try:
-        teams = list(teams_collection.find({}))
-        serialized_results = [serialize_document(doc) for doc in teams]
-        return JsonResponse(serialized_results, safe=False)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-class TeamViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for viewing and editing Team instances.
-    """
-    queryset = Team.objects.all()
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['department']
-    search_fields = ['name', 'description', 'department']
-    ordering_fields = ['name', 'created_at', 'department']
-    
-    def get_serializer_class(self):
-        if self.action in ['create', 'update', 'partial_update']:
-            return TeamCreateUpdateSerializer
-        return TeamSerializer
-    
-    @action(detail=True, methods=['get'])
-    def members(self, request, pk=None):
-        team = self.get_object()
-        serializer = TeamSerializer(team)
-        return Response(serializer.data['members'])
-    
-    @action(detail=True, methods=['post'])
-    def add_member(self, request, pk=None):
-        team = self.get_object()
-        employee_id = request.data.get('employee_id')
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            team.add_member(employee)
-            return Response({'status': 'Member added'}, status=status.HTTP_200_OK)
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=True, methods=['post'])
-    def remove_member(self, request, pk=None):
-        team = self.get_object()
-        employee_id = request.data.get('employee_id')
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            team.remove_member(employee)
-            return Response({'status': 'Member removed'}, status=status.HTTP_200_OK)
-        except Employee.DoesNotExist:
-            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=True, methods=['post'])
-    def set_leader(self, request, pk=None):
-        team = self.get_object()
-        employee_id = request.data.get('employee_id')
-        
-        if not employee_id:
-            return Response({"error": "Employee ID is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            team.leader = employee
-            team.save()
-            return Response({"success": f"{employee.user.get_full_name()} set as leader of {team.name}"})
-        except Employee.DoesNotExist:
-            return Response({"error": "Employee not found"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=True, methods=['get'])
-    def projects(self, request, pk=None):
-        team = self.get_object()
-        projects = team.projects.all()
-        serializer = ProjectSerializer(projects, many=True)
-        return Response(serializer.data)
+    """GET /api/teams/mongodb_list/ - every team (any signed-in user; this is the company directory)."""
+    return JsonResponse([serialize_document(t) for t in teams_collection.find({})], safe=False)
 
 
-@api_view(['POST'])
-@require_role(['Admin', 'Manager'])
+@csrf_exempt
+@require_http_methods(['POST'])
 def mongodb_create(request):
-    """
-    Create a team in MongoDB with department and employee data
-    
-    Request:
-        {
-            "name": "Team name",
-            "department": "Department name",
-            "description": "Team description",
-            "leader_id": "ID of leader",
-            "employee_ids": ["ID1", "ID2"]
-        }
-    """
-    try:
-        # Get data from request
-        data = request.data
-        if not data:
-            return Response({'error': 'No data provided'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Log the incoming request
-        print(f"🔹 TEAMS: Creating team with data: {data}")
-        
-        # Validate required fields
-        if not data.get('name'):
-            return Response({'error': 'Team name is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not data.get('department'):
-            return Response({'error': 'Department is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create a clean team document
-        team_doc = {
-            'name': data.get('name'),
-            'department': data.get('department'),
-            'description': data.get('description', f"Team in {data.get('department')} department"),
-            'created_at': datetime.now().isoformat(),
-            'updated_at': datetime.now().isoformat(),
-            'employees': [],
-            'manager_id': data.get('manager_id'),
-            'leader_id': data.get('leader_id')
-        }
-        
-        # Process employee IDs if provided
-        employee_ids = data.get('employee_ids', [])
-        if isinstance(employee_ids, str):
-            try:
-                employee_ids = json.loads(employee_ids)
-            except:
-                employee_ids = [employee_ids]
-        
-        leader_id = data.get('leader_id')
-        manager_id = data.get('manager_id')
-        
-        # If leader_id/manager_id is provided and not in employee_ids, add it
-        if leader_id and leader_id not in employee_ids:
-            employee_ids.append(leader_id)
-        if manager_id and manager_id not in employee_ids:
-            employee_ids.append(manager_id)
-        
-        # Fetch employee details and add to team
-        if employee_ids:
-            for emp_id in employee_ids:
-                if not emp_id: continue
-                try:
-                    # Convert to ObjectId if needed
-                    try:
-                        employee_oid = ObjectId(emp_id) if not isinstance(emp_id, ObjectId) else emp_id
-                    except:
-                        print(f"⚠️ TEAMS: Invalid employee ID format: {emp_id}")
-                        continue
-                        
-                    employee = employees_collection.find_one({'_id': employee_oid})
-                    
-                    if employee:
-                        # Add employee to team
-                        employee_data = {
-                            'id': str(employee['_id']),
-                            'name': f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip(),
-                            'position': employee.get('position', 'Team Member'),
-                            'is_leader': str(emp_id) == str(leader_id),
-                            'is_manager': str(emp_id) == str(manager_id)
-                        }
-                        team_doc['employees'].append(employee_data)
-                        
-                        # Update employee record to include this team
-                        current_teams = employee.get('teams', [])
-                        if not isinstance(current_teams, list):
-                            current_teams = []
-                        
-                        # Check if employee is already in this team
-                        team_exists = False
-                        for t in current_teams:
-                            if isinstance(t, dict) and t.get('name') == team_doc['name']:
-                                team_exists = True
-                                break
-                            
-                        if not team_exists:
-                            current_teams.append({
-                                'name': team_doc['name'],
-                                'department': team_doc['department'],
-                                'is_leader': str(emp_id) == str(leader_id),
-                                'is_manager': str(emp_id) == str(manager_id)
-                            })
-                            employees_collection.update_one(
-                                {'_id': employee_oid},
-                                {'$set': {'teams': current_teams, 'team': team_doc['name']}}
-                            )
-                except Exception as emp_error:
-                    print(f"❌ TEAMS: Error processing employee {emp_id}: {str(emp_error)}")
-        
-        # Insert team into MongoDB
-        print(f"🔹 TEAMS: Inserting team document into collection: {teams_collection.name}")
-        result = teams_collection.insert_one(team_doc)
-        team_id = str(result.inserted_id)
-        
-        # Prepare response with serialized document
-        team_doc['_id'] = result.inserted_id
-        serialized_team = serialize_document(team_doc)
-        
-        response_data = {
-            'message': 'Team created successfully',
-            'id': team_id,
-            'team': serialized_team
-        }
-        
-        return Response(response_data, status=status.HTTP_201_CREATED)
-        
-    except Exception as e:
-        print(f"❌ TEAMS: Fatal error creating team: {str(e)}")
-        traceback.print_exc()
-        return Response({'error': f'Failed to create team: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    """POST /api/teams/teams/mongodb_create/ {name, department, description?, leader_id?, manager_id?, employee_ids?} (Admin)."""
+    if not is_admin(request):
+        return forbidden('Only administrators create teams.')
+    data = body(request)
+    fields, error = _clean(data)
+    if error:
+        return JsonResponse({'error': error}, status=400)
+    team = {**fields, 'employees': [], 'is_active': True, 'created_at': _now(), 'updated_at': _now()}
+    members = team.pop('members')
+    team_id = teams_collection.insert_one(team).inserted_id
+    cards = _apply_members(team_id, team['name'], team['department'], members, team['leader_id'], team['manager_id'])
+    teams_collection.update_one({'_id': team_id}, {'$set': {'employees': cards, 'members': [c['id'] for c in cards]}})
+    return JsonResponse({'message': 'Team created successfully', 'id': str(team_id),
+                         'team': serialize_document(teams_collection.find_one({'_id': team_id}))}, status=201)
 
 
-@api_view(['PUT'])
-@require_team_leader_or_role(['Admin', 'Manager'])
+@csrf_exempt
+@require_http_methods(['PUT'])
 def mongodb_update(request, pk=None):
-    """
-    Update a team in MongoDB with department and employee data
-    """
-    try:
-        # Debug logging for auth
-        auth_header = request.headers.get('Authorization', 'MISSING')
-        user_role = getattr(request, 'role', 'UNDEFINED')
-        print(f"DEBUG AUTH: Path {request.path} | Role: {user_role} | Header: {auth_header[:20]}...")
-
-        if not pk:
-            return Response({'error': 'Team ID is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Find the team
-        team_id = ObjectId(pk)
-        team = teams_collection.find_one({'_id': team_id})
-        
-        if not team:
-            return Response({'error': 'Team not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        data = request.data.copy()
-        
-        print(f"🔹 TEAMS: Updating team {pk} with data: {data}")
-        
-        # Create an update document
-        new_name = data.get('name', team.get('name'))
-        new_department = data.get('department', team.get('department'))
-        update_doc = {
-            'name': new_name,
-            'department': new_department,
-            'description': data.get('description', team.get('description')),
-            'updated_at': datetime.now().isoformat(),
-            'employees': [],
-            'manager_id': data.get('manager_id', team.get('manager_id')),
-            'leader_id': data.get('leader_id', team.get('leader_id'))
-        }
-        
-        # Collect old employee ids for comparison
-        old_employee_ids = set(e.get('id', '') for e in team.get('employees', []))
-        
-        # Process new employee IDs
-        employee_ids = data.get('employee_ids', [])
-        leader_id = data.get('leader_id')
-        manager_id = data.get('manager_id')
-        
-        if leader_id and leader_id not in employee_ids:
-            employee_ids.append(leader_id)
-        if manager_id and manager_id not in employee_ids:
-            employee_ids.append(manager_id)
-        
-        new_employee_ids = set(str(eid) for eid in employee_ids)
-        
-        # Un-assign employees no longer in this team
-        removed_ids = old_employee_ids - new_employee_ids
-        for removed_id in removed_ids:
-            try:
-                removed_oid = ObjectId(removed_id)
-                employees_collection.update_one(
-                    {'_id': removed_oid},
-                    {'$set': {'team': '', 'team_id': ''}}
-                )
-                print(f"🔹 TEAMS: Cleared team from employee {removed_id}")
-            except Exception as rm_err:
-                print(f"❌ TEAMS: Error clearing team from employee {removed_id}: {rm_err}")
-
-        # Fetch employee details and add to team
-        if employee_ids:
-            for emp_id in employee_ids:
-                try:
-                    employee_oid = ObjectId(emp_id) if not isinstance(emp_id, ObjectId) else emp_id
-                    employee = employees_collection.find_one({'_id': employee_oid})
-                    
-                    if employee:
-                        employee_data = {
-                            'id': str(employee['_id']),
-                            'name': f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip(),
-                            'position': employee.get('position', 'Team Member'),
-                            'email': employee.get('email', ''),
-                            'phone': employee.get('phone', ''),
-                            'hire_date': employee.get('hire_date', ''),
-                            'employee_id': employee.get('employee_id', str(employee['_id'])),
-                            'is_leader': str(emp_id) == str(leader_id),
-                            'is_manager': str(emp_id) == str(manager_id)
-                        }
-                        update_doc['employees'].append(employee_data)
-                        
-                        # Update employee record with team info
-                        employees_collection.update_one(
-                            {'_id': employee_oid},
-                            {'$set': {
-                                'team': new_name,
-                                'team_id': pk
-                            }}
-                        )
-                except Exception as emp_error:
-                    print(f"❌ TEAMS: Error processing employee {emp_id}: {str(emp_error)}")
-        
-        # Update team in MongoDB
-        teams_collection.update_one({'_id': team_id}, {'$set': update_doc})
-        
-        # Get the updated team
-        updated_team = teams_collection.find_one({'_id': team_id})
-        serialized_team = serialize_document(updated_team)
-        
-        return Response({
-            'message': 'Team updated successfully',
-            'id': pk,
-            'team': {
-                'id': pk,
-                **serialized_team
-            }
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        print(f"❌ TEAMS: Error updating team: {str(e)}")
-        traceback.print_exc()
-        return Response({'error': f'Failed to update team: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-class ProjectViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for viewing and editing Project instances.
-    """
-    queryset = Project.objects.all()
-    serializer_class = ProjectSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['status', 'team']
-    search_fields = ['name', 'description', 'team__name']
-    ordering_fields = ['name', 'start_date', 'status']
-    
-    @action(detail=False, methods=['get'])
-    def by_team(self, request):
-        team_id = request.query_params.get('team_id')
-        if team_id:
-            projects = Project.objects.filter(team_id=team_id)
-            serializer = self.get_serializer(projects, many=True)
-            return Response(serializer.data)
-        return Response({'error': 'Team ID is required'}, status=status.HTTP_400_BAD_REQUEST) 
+    """PUT /api/teams/teams/<id>/mongodb_update/ - Admin, or the team's own manager / leader."""
+    team_id = _oid(pk)
+    team = teams_collection.find_one({'_id': team_id}) if team_id else None
+    if not team:
+        return JsonResponse({'error': 'Team not found'}, status=404)
+    if not is_admin(request):
+        me = _requester(request)
+        owner = {str(team.get('manager_id') or ''), str(team.get('leader_id') or '')}
+        if not (is_privileged(request) and me and str(me['_id']) in owner):
+            return forbidden('Only administrators or this team\'s manager or leader can edit it.')
+    fields, error = _clean(body(request), team)
+    if error:
+        return JsonResponse({'error': error}, status=400)
+    members = fields.pop('members')
+    cards = _apply_members(team_id, fields['name'], fields['department'], members, fields['leader_id'], fields['manager_id'])
+    teams_collection.update_one({'_id': team_id}, {'$set': {**fields, 'employees': cards, 'members': [c['id'] for c in cards], 'updated_at': _now()}})
+    updated = serialize_document(teams_collection.find_one({'_id': team_id}))
+    return JsonResponse({'message': 'Team updated successfully', 'id': pk, 'team': {'id': pk, **updated}})

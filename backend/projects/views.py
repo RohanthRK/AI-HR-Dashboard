@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 
 from hr_backend.db import projects, employees
 from utils.api_utils import serialize_document
+from utils.auth_utils import is_privileged, forbidden
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -167,6 +168,8 @@ def create_project(request):
             "project_id": "ObjectId"
         }
     """
+    if not is_privileged(request):
+        return forbidden()
     try:
         # Parse JSON data
         data = json.loads(request.body)
@@ -245,6 +248,8 @@ def update_project(request, project_id):
     Response:
         Success message or error
     """
+    if not is_privileged(request):
+        return forbidden()
     try:
         # Parse JSON data
         data = json.loads(request.body)
@@ -330,6 +335,8 @@ def delete_project(request, project_id):
     Response:
         Success message or error
     """
+    if not is_privileged(request):
+        return forbidden()
     try:
         # Check if project exists
         try:

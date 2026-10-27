@@ -45,6 +45,11 @@ export const ColorModeProvider = ({ children }) => {
             main: '#FF69B4', // Brutalist Pink
             contrastText: '#000000',
           },
+          // WCAG AA contrast for text on these fills
+          warning: mode === 'light' ? { main: '#b45309', contrastText: '#ffffff' } : { main: '#fb923c', contrastText: '#000000' },
+          success: mode === 'light' ? { main: '#2e7d32', contrastText: '#ffffff' } : { main: '#66bb6a', contrastText: '#000000' },
+          error: mode === 'light' ? { main: '#c62828', contrastText: '#ffffff' } : { main: '#ef5350', contrastText: '#000000' },
+          info: mode === 'light' ? { main: '#0369a1', contrastText: '#ffffff' } : { main: '#38bdf8', contrastText: '#000000' },
           background: {
             default: mode === 'light' ? '#F4F4F0' : '#0a1219', // Premium dark or off-white
             paper: mode === 'light' ? '#FFFFFF' : '#111821',
@@ -66,7 +71,7 @@ export const ColorModeProvider = ({ children }) => {
           h1: { fontWeight: 900, textTransform: 'uppercase' },
           h2: { fontWeight: 900, textTransform: 'uppercase' },
           h3: { fontWeight: 800 },
-          h4: { fontWeight: 800 },
+          h4: { fontWeight: 900, textTransform: 'uppercase', letterSpacing: -0.5 },
           h5: { fontWeight: 700 },
           h6: { fontWeight: 700, textTransform: 'uppercase' },
           button: { textTransform: 'uppercase', fontWeight: 800 },
@@ -90,6 +95,39 @@ export const ColorModeProvider = ({ children }) => {
                 backgroundColor: '#FFD700',
                 '&:hover': { backgroundColor: '#E6C200' },
               },
+              // yellow text on a white page is unreadable: keep the text dark in light mode
+              outlinedPrimary: {
+                color: mode === 'light' ? '#000000' : '#FFD700',
+                backgroundColor: mode === 'light' ? '#FFFFFF' : 'transparent',
+                borderColor: mode === 'light' ? '#000000' : '#FFFFFF',
+                '&:hover': { backgroundColor: mode === 'light' ? '#FFF3B0' : 'rgba(255, 215, 0, 0.12)', borderColor: mode === 'light' ? '#000000' : '#FFFFFF' },
+              },
+              textPrimary: {
+                color: mode === 'light' ? '#000000' : '#FFD700',
+              },
+              // some pages set a black label on every button; keep the label readable on the coloured fill
+              containedSuccess: { color: `${mode === 'light' ? '#ffffff' : '#000000'} !important` },
+              containedError: { color: `${mode === 'light' ? '#ffffff' : '#000000'} !important` },
+              containedWarning: { color: `${mode === 'light' ? '#ffffff' : '#000000'} !important` },
+              outlinedWarning: { color: mode === 'light' ? '#9a3412' : '#fdba74' },
+            },
+          },
+          MuiTab: {
+            styleOverrides: {
+              root: {
+                fontWeight: 800,
+                '&.Mui-selected': { color: mode === 'light' ? '#000000' : '#FFD700' },
+              },
+            },
+          },
+          MuiTabs: {
+            styleOverrides: {
+              indicator: { height: 4, backgroundColor: '#FFD700' },
+            },
+          },
+          MuiLink: {
+            styleOverrides: {
+              root: { color: mode === 'light' ? '#000000' : '#FFD700', fontWeight: 700 },
             },
           },
           MuiCard: {

@@ -6,7 +6,7 @@ class TeamsConfig(AppConfig):
     verbose_name = 'Teams Management'
     
     def ready(self):
-        import teams.signals
+        pass
 
     def __str__(self):
         return self.name 

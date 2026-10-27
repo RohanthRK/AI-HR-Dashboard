@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from hr_backend.db import db
 from bson import ObjectId
+from utils.hr_common import employee_names
 
 assets_collection = db["assets"]
 
@@ -22,32 +23,46 @@ def handle_assets(request):
         query = {}
         # Privacy filter: Only Admins can see all assets
         if user_role != 'admin':
-            user_email = ""
+            import re
+            from hr_backend.db import employees
+            # the token carries the employee's _id; assignments are stored as a code ("EMP-1001"),
+            # "First Last (EMP-1001)" (admin UI), an e-mail address or a username
+            employee = None
             if employee_id:
-                from hr_backend.db import employees
                 employee = employees.find_one({'employee_id': employee_id})
-                if employee:
-                    user_email = employee.get('email', '')
-            
+                if not employee and len(str(employee_id)) == 24:
+                    try:
+                        employee = employees.find_one({'_id': ObjectId(str(employee_id))})
+                    except Exception:
+                        employee = None
+            code = employee.get('employee_id', '') if employee else ''
+            user_email = employee.get('email', '') if employee else ''
             username = request.user_info.get('username', '') if hasattr(request, 'user_info') else ''
-            
-            # Match current user's employee_id, email, or username against assignedTo
+
             or_conditions = []
+            if code:
+                or_conditions.append({'assignedTo': code})
+                or_conditions.append({'assignedTo': {'$regex': r'\(' + re.escape(code) + r'\)$'}})
             if employee_id:
-                or_conditions.append({'assignedTo': employee_id})
+                or_conditions.append({'assignedTo': str(employee_id)})
             if user_email:
                 or_conditions.append({'assignedTo': user_email})
             if username:
                 or_conditions.append({'assignedTo': username})
-                
+
             if or_conditions:
                 query['$or'] = or_conditions
             else:
                 return JsonResponse({'success': True, 'assets': []})
 
         assets = list(assets_collection.find(query))
+        names = employee_names()
         for asset in assets:
             asset['_id'] = str(asset['_id'])
+            holder = str(asset.get('assignedTo', ''))
+            code = holder.rsplit('(', 1)[-1].rstrip(')') if holder.endswith(')') else holder
+            asset['assignedToName'] = names.get(code, '')
+            asset['assignedToCode'] = code
         return JsonResponse({'success': True, 'assets': assets})
         
     elif request.method == 'POST':
@@ -98,6 +113,13 @@ def handle_asset_detail(request, asset_id):
     if request.method == 'GET':
         asset = assets_collection.find_one({'_id': obj_id})
         if asset:
+            if user_role not in ('admin', 'manager', 'hr'):
+                from hr_backend.db import employees as _emps
+                me = _emps.find_one({'employee_id': str(getattr(request, 'employee_id', ''))}) or {}
+                mine = {str(getattr(request, 'employee_id', '')), me.get('email', ''),
+                        request.user_info.get('username', '') if hasattr(request, 'user_info') else ''} - {''}
+                if asset.get('assignedTo') not in mine:
+                    return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
             asset['_id'] = str(asset['_id'])
             return JsonResponse({'success': True, 'asset': asset})
         return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)

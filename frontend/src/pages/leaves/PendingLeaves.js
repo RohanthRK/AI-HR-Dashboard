@@ -1,9 +1,11 @@
+import { formatDate, formatDateRange } from '../../utils/format';
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  CircularProgress, 
+
+import {
+  Box,
+  Typography,
+  Paper,
+  CircularProgress,
   Button,
   Table,
   TableBody,
@@ -18,13 +20,14 @@ import {
   DialogContentText,
   DialogTitle,
   TextField,
-  Tooltip,
-  IconButton,
-  Grid
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import InfoIcon from '@mui/icons-material/Info';
+
 import leaveService from '../../services/leaveService';
+
 import { useSnackbar } from 'notistack';
+
 
 const PendingLeaves = () => {
   const [loading, setLoading] = useState(true);
@@ -162,18 +165,18 @@ const PendingLeaves = () => {
                       <Chip 
                         label={leave.leave_type} 
                         size="small" 
-                        color={leave.leave_type === 'Earned Leaves' ? 'primary' : 'warning'} 
+                        color={leave.leave_type === 'Earned Leaves' ? 'primary' : leave.leave_type === 'Sick Leaves' ? 'info' : 'warning'} 
                         variant="outlined"
                       />
                     </TableCell>
                     <TableCell>
-                      {leave.start_date} {leave.is_half_day && <Chip label={leave.half_day_segment} size="mini" sx={{ height: 16, fontSize: '0.65rem' }} />}
-                      {!leave.is_half_day && leave.start_date !== leave.end_date && ` to ${leave.end_date}`}
+                      {formatDate(leave.start_date)} {leave.is_half_day && <Chip label={leave.half_day_segment} size="mini" sx={{ height: 16, fontSize: '0.65rem' }} />}
+                      {!leave.is_half_day && leave.start_date !== leave.end_date && ` – ${formatDate(leave.end_date)}`}
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>{leave.days}</Typography>
                     </TableCell>
-                    <TableCell>{new Date(leave.requested_at).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(leave.requested_at)}</TableCell>
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
                         <Button 
@@ -227,7 +230,7 @@ const PendingLeaves = () => {
                 <Grid item xs={12}>
                   <Typography variant="subtitle2" color="text.secondary">Period</Typography>
                   <Typography variant="body1">
-                    {selectedLeave.start_date} to {selectedLeave.end_date} 
+                    {formatDateRange(selectedLeave.start_date, selectedLeave.end_date)} 
                     {selectedLeave.is_half_day ? ` (${selectedLeave.half_day_segment})` : ` (${selectedLeave.days} days)`}
                   </Typography>
                 </Grid>
@@ -256,7 +259,7 @@ const PendingLeaves = () => {
               </DialogContentText>
               <Box sx={{ mt: 2, p: 2, bgcolor: 'success.light', borderRadius: 1, color: 'success.contrastText' }}>
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  {selectedLeave.leave_type}: {selectedLeave.start_date} ({selectedLeave.days} days)
+                  {selectedLeave.leave_type}: {formatDate(selectedLeave.start_date)} ({selectedLeave.days} days)
                 </Typography>
               </Box>
             </DialogContent>

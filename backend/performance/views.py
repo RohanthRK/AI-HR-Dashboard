@@ -4,6 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 from bson import ObjectId
 from datetime import datetime
 from hr_backend.db import db, employees, users
+from utils.auth_utils import is_privileged, is_admin, owns_employee, forbidden, can_see_employee, visible_refs
 
 # MongoDB collection
 collection = db.pips
@@ -73,6 +74,16 @@ def get_pips(request):
                     except Exception: pass
                 query['employee_id'] = {'$in': req_ids}
 
+        if is_privileged(request) and not is_admin(request):       # managers: their reports only
+            allowed = []
+            for ref in visible_refs(request) or ():
+                allowed.append(ref)
+                if len(ref) == 24:
+                    try:
+                        allowed.append(ObjectId(ref))
+                    except Exception:
+                        pass
+            query = {'$and': [query, {'employee_id': {'$in': allowed}}]} if query else {'employee_id': {'$in': allowed}}
         pips = list(collection.find(query).sort('created_at', -1))
         for pip in pips:
             pip['_id'] = str(pip['_id'])
@@ -153,7 +164,11 @@ def pip_detail(request, pip_id):
     if not pip:
         return JsonResponse({'status': 'error', 'message': 'PIP not found'}, status=404)
 
+    if is_privileged(request) and not can_see_employee(request, pip.get('employee_id')):
+        return forbidden()
     if request.method == 'GET':
+        if not is_privileged(request) and not owns_employee(request, pip.get('employee_id')):
+            return forbidden()
         pip['_id'] = str(pip['_id'])
         return JsonResponse({'status': 'success', 'data': pip})
 

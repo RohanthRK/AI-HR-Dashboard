@@ -2,7 +2,7 @@
 MongoDB connection utility for the HR Dashboard application.
 """
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError, ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 import os
 from django.conf import settings
 import logging
@@ -90,50 +90,43 @@ def safe_create_index(collection, index_key, **kwargs):
     except Exception as e:
         logger.error(f"Error creating index on {collection.name}: {e}")
 
-# Create indexes safely
-try:
-    # Users collection indexes
-    safe_create_index(users, "username", unique=True)
-    safe_create_index(users, "email", unique=True)
-    
-    # Employees collection indexes
-    safe_create_index(employees, "employee_id")
-    safe_create_index(employees, "email", unique=True)
-    
-    # Department collection indexes
-    safe_create_index(departments, "department_id")
-    
-    # Teams collection indexes
-    safe_create_index(teams, "name")
-    safe_create_index(teams, "department")
-    safe_create_index(teams, "leader_id")
-    
-    # Attendance and leave indexes
-    safe_create_index(attendance, [("employee_id", 1), ("date", 1)], unique=True)
-    safe_create_index(leaves, [("employee_id", 1), ("start_date", 1)])
-    safe_create_index(leaves, [("employee_id", 1), ("status", 1)])
-    
-    # Task and project indexes
-    safe_create_index(tasks, [("employee_id", 1), ("status", 1)])
-    safe_create_index(tasks, [("project_id", 1), ("status", 1)])
-    safe_create_index(projects, "name", unique=True)
-    
-    # Notification indexes
-    safe_create_index(notifications, [("user_id", 1), ("read", 1)])
-    
-    # Other useful indexes
-    safe_create_index(time_tracking, [("employee_id", 1), ("date", 1)])
-    safe_create_index(time_tracking, [("task_id", 1), ("date", 1)])
-    safe_create_index(benefits, "employee_id")
-    safe_create_index(training, [("employee_id", 1), ("status", 1)])
-    safe_create_index(performance, [("employee_id", 1), ("review_period_id", 1)])
-    safe_create_index(feedback, [("sender_id", 1), ("recipient_id", 1), ("date", 1)])
-    safe_create_index(reports, [("employee_id", 1), ("date", 1)])
-    safe_create_index(chat, [("employee_id", 1), ("date", 1)])
-    safe_create_index(jobs, [("employee_id", 1), ("status", 1)])
-    safe_create_index(skills, [("employee_id", 1), ("skill_id", 1)])
-    safe_create_index(recruitment, [("employee_id", 1), ("status", 1)])
-    
-except Exception as e:
-    logger.error(f"Error setting up MongoDB indexes: {e}")
-    # Allow the application to continue even if indexes can't be created 
+def ensure_indexes():
+    """Create the indexes the app relies on (idempotent). Called at import and again after a database wipe."""
+    try:
+        # identity
+        safe_create_index(users, "username", unique=True)
+        safe_create_index(users, "email", unique=True)
+        safe_create_index(employees, "employee_id", unique=True)
+        safe_create_index(employees, "email", unique=True)
+        safe_create_index(employees, "user_id")
+        safe_create_index(employees, "team_id")
+        safe_create_index(employees, "department_id")
+        safe_create_index(teams, "name")
+
+        # time and money
+        safe_create_index(attendance, [("employee_id", 1), ("date", 1)], unique=True)
+        safe_create_index(leaves, [("employee_id", 1), ("start_date", 1)])
+        safe_create_index(leaves, [("employee_id", 1), ("status", 1)])
+        safe_create_index(leaves, [("manager_id", 1), ("status", 1)])
+        safe_create_index(payroll, [("employee_id", 1), ("period", 1)], unique=True)
+
+        # people programmes
+        safe_create_index(reviews, "employee_id")
+        safe_create_index(db['objectives'], "employee_id")
+        safe_create_index(db['pips'], "employee_id")
+        safe_create_index(db['TrainingAssignments'], [("employee_id", 1), ("course_id", 1)], unique=True)
+        safe_create_index(db['SurveyResponses'], [("survey_id", 1), ("respondent", 1)], unique=True)
+        safe_create_index(db['Onboarding'], "employee_id", unique=True)
+        safe_create_index(db['Offboarding'], "employee_id")
+        safe_create_index(db['Recognitions'], "to_employee_id")
+        safe_create_index(db['Documents'], "employee_id")
+        safe_create_index(db['candidates'], "job_id")
+        safe_create_index(db['expenses'], "employee_id")
+        safe_create_index(db['helpdesk_tickets'], "employee_id")
+        safe_create_index(notifications, [("user_id", 1), ("read", 1)])
+    except Exception as e:
+        logger.error(f"Error setting up MongoDB indexes: {e}")
+        # Allow the application to continue even if indexes can't be created
+
+
+ensure_indexes()

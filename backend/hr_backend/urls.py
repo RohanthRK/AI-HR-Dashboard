@@ -15,9 +15,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.urls import path, include
-from django.conf import settings
-from django.conf.urls.static import static
 from django.http import JsonResponse
+from utils.app_settings import settings_handler
 
 def health_check(request):
     """
@@ -110,12 +109,6 @@ def api_root(request):
     /api/ai/talent-insights/employee/{id}/ - GET: Individual employee insights
     /api/ai/talent-insights/employees/ - GET: All employees with AI-enhanced attributes
     
-    # Reports
-    /api/reports/                     - GET: List available reports
-    /api/reports/attendance/          - GET: Generate attendance report
-    /api/reports/employee-stats/      - GET: Employee statistics report
-    /api/reports/department-stats/    - GET: Department statistics report
-    /api/reports/custom/              - POST: Generate custom report
     """
     return JsonResponse({
         'status': 'ok',
@@ -129,16 +122,17 @@ def api_root(request):
             'reviews': '/api/reviews/',
             'payroll': '/api/payroll/',
             'ai': '/api/ai/',
-            'notifications': '/api/notifications/',
-            'reports': '/api/reports/',
-            'chat': '/api/chat/',
-            'projects': '/api/projects/',
-            'tasks': '/api/tasks/',
             'training': '/api/training/',
-            'benefits': '/api/benefits/',
-            'performance': '/api/performance/',
             'feedback': '/api/feedback/',
-            'jobs': '/api/jobs/',
+            'reports': '/api/reports/',
+            'offboarding': '/api/offboarding/',
+            'onboarding': '/api/onboarding/',
+            'recognition': '/api/recognition/',
+            'integrations': '/api/integrations/',
+            'settings': '/api/settings/',
+            'notifications': '/api/notifications/',
+            'projects': '/api/projects/',
+            'performance': '/api/performance/',
             'skills': '/api/skills/',
             'recruitment': '/api/recruitment/',
             'teams': '/api/teams/',
@@ -153,6 +147,8 @@ urlpatterns = [
     # path('admin/', admin.site.urls),  # Admin site removed to avoid authentication
     path('api/', api_root, name='api_root'),
     path('api/health/', health_check, name='health_check'),
+    path('api/settings/', settings_handler, name='app_settings'),
+    path('api/dashboard/', include('dashboard.urls')),
     path('api/auth/', include('auth_app.urls')),
     path('api/employees/', include('employees.urls')),
     path('api/attendance/', include('attendance.urls')),
@@ -163,25 +159,21 @@ urlpatterns = [
     path('api/payroll/', include('payroll.urls')),
     path('api/ai/', include('ai_analytics.urls')),
     path('api/notifications/', include('notifications.urls')),
-    path('api/reports/', include('reports.urls')),
-    path('api/chat/', include('chat.urls')),
     path('api/projects/', include('projects.urls')),
-    path('api/tasks/', include('tasks.urls')),
     path('api/training/', include('training.urls')),
-    path('api/benefits/', include('benefits.urls')),
-    path('api/performance/', include('performance.urls')),
     path('api/feedback/', include('feedback.urls')),
-    path('api/time-tracking/', include('time_tracking.urls')),
-    path('api/jobs/', include('jobs.urls')),
+    path('api/reports/', include('reports.urls')),
+    path('api/offboarding/', include('offboarding.urls')),
+    path('api/onboarding/', include('onboarding.urls')),
+    path('api/recognition/', include('recognition.urls')),
+    path('api/integrations/', include('integrations.urls')),
+    path('api/performance/', include('performance.urls')),
     path('api/skills/', include('skills.urls')),
     path('api/recruitment/', include('recruitment.urls')),
+    path('api/public/', include('recruitment.public_urls')),
     path('api/teams/', include('teams.urls')),
     path('api/expenses/', include('expenses.urls')),
     path('api/assets/', include('assets.urls')),
     path('api/helpdesk/', include('helpdesk.urls')),
     path('api/objectives/', include('objectives.urls')),
 ]
-
-# Serve media files in development
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,4 +1,3 @@
-from django.shortcuts import render
 
 # Create your views here.
 
@@ -16,11 +15,107 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.hashers import check_password, make_password
 
-from hr_backend.db import users, roles, employees
+from hr_backend.db import users, roles, employees, db
+
+login_attempts = db['LoginAttempts']
+MAX_FAILED_LOGINS = 5
+MIN_PASSWORD_LENGTH = 8
+LOCKOUT_MINUTES = 15
+
+
+def _client_key(request, username):
+    ip = (request.META.get('HTTP_X_FORWARDED_FOR', '') or request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
+    return f"{(username or '').lower()}|{ip}"
+
+
+def _locked_out(key):
+    doc = login_attempts.find_one({'_id': key})
+    if not doc or doc.get('count', 0) < MAX_FAILED_LOGINS:
+        return False
+    until = doc.get('locked_until')
+    if until and until.replace(tzinfo=datetime.timezone.utc) > datetime.datetime.now(tz=datetime.timezone.utc):
+        return True
+    login_attempts.delete_one({'_id': key})
+    return False
+
+
+def _record_failure(key):
+    doc = login_attempts.find_one_and_update(
+        {'_id': key}, {'$inc': {'count': 1}}, upsert=True, return_document=True)
+    if doc.get('count', 0) >= MAX_FAILED_LOGINS:
+        login_attempts.update_one({'_id': key}, {'$set': {
+            'locked_until': datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(minutes=LOCKOUT_MINUTES)}})
 
 def hash_password(password):
     """Hash a password using Django's password hasher"""
     return make_password(password)
+
+def build_session(user):
+    """JWT + user info for a Users document (used by password login and SSO)."""
+    # Generate JWT token
+    expiry = datetime.datetime.now(tz=datetime.timezone.utc) + settings.JWT_EXPIRATION_DELTA
+    
+    # Get role name
+    role_name = 'Employee' # Default
+    if user.get('role_id'):
+        role_doc = roles.find_one({'_id': ObjectId(user['role_id'])})
+        if role_doc:
+            role_name = role_doc.get('name', 'Employee')
+    
+    # Get employee additional details
+    employee_data = {}
+    emp_query = {'$or': []}
+    if user.get('employee_id'):
+        emp_query['$or'].append({'employee_id': user['employee_id']})
+        try:
+            emp_query['$or'].append({'_id': ObjectId(user['employee_id'])})
+        except Exception:
+            pass
+    if user.get('email'):
+        emp_query['$or'].append({'email': user['email']})
+    if user.get('_id'):
+        emp_query['$or'].append({'user_id': str(user['_id'])})
+        emp_query['$or'].append({'user_id': user['_id']})
+        
+    emp_doc = employees.find_one(emp_query) if emp_query['$or'] else None
+    if emp_doc:
+        employee_data = {
+            'first_name': emp_doc.get('first_name', ''),
+            'last_name': emp_doc.get('last_name', ''),
+            'department': emp_doc.get('department', ''),
+            'team': emp_doc.get('team', ''),
+            'department_id': str(emp_doc.get('department_id', '')),
+            'team_id': str(emp_doc.get('team_id', '')),
+            'employee_code': emp_doc.get('employee_id', '')
+        }
+    
+    payload = {
+        'user_id': str(user['_id']),
+        'username': user['username'],
+        'email': user.get('email', ''),
+        'role': role_name,
+        'employee_id': user.get('employee_id', '') or (str(emp_doc['_id']) if emp_doc else ''),
+        'exp': expiry,
+        **employee_data
+    }
+    
+    token = jwt.encode(
+        payload,
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM
+    )
+    
+    user_info = {
+            'id': str(user['_id']),
+            'username': user['username'],
+            'role': role_name,
+            'email': user.get('email', ''),
+            'employee_id': user.get('employee_id', '') or (str(emp_doc['_id']) if emp_doc else ''),
+            'expires': expiry.isoformat(),
+            **employee_data
+        }
+    return token, user_info
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -41,10 +136,18 @@ def login(request):
                 'message': 'Username and password are required'
             }, status=400)
             
+        throttle_key = _client_key(request, username)
+        if _locked_out(throttle_key):
+            return JsonResponse({
+                'error': 'Too many attempts',
+                'message': f'Too many failed logins. Try again in {LOCKOUT_MINUTES} minutes.'
+            }, status=429)
+
         # Find user in MongoDB
         user = users.find_one({'username': username})
         
         if not user:
+            _record_failure(throttle_key)
             return JsonResponse({
                 'error': 'Unauthorized',
                 'message': 'Invalid username or password'
@@ -79,77 +182,16 @@ def login(request):
                 )
         
         if not is_valid:
+            _record_failure(throttle_key)
             return JsonResponse({
                 'error': 'Unauthorized',
                 'message': 'Invalid username or password'
             }, status=401)
             
-        # Generate JWT token
-        expiry = datetime.datetime.now(tz=datetime.timezone.utc) + settings.JWT_EXPIRATION_DELTA
-        
-        # Get role name
-        role_name = 'Employee' # Default
-        if user.get('role_id'):
-            role_doc = roles.find_one({'_id': ObjectId(user['role_id'])})
-            if role_doc:
-                role_name = role_doc.get('name', 'Employee')
-        
-        # Get employee additional details
-        employee_data = {}
-        emp_query = {'$or': []}
-        if user.get('employee_id'):
-            emp_query['$or'].append({'employee_id': user['employee_id']})
-            try:
-                emp_query['$or'].append({'_id': ObjectId(user['employee_id'])})
-            except Exception:
-                pass
-        if user.get('email'):
-            emp_query['$or'].append({'email': user['email']})
-        if user.get('_id'):
-            emp_query['$or'].append({'user_id': str(user['_id'])})
-            emp_query['$or'].append({'user_id': user['_id']})
-            
-        emp_doc = employees.find_one(emp_query) if emp_query['$or'] else None
-        if emp_doc:
-            employee_data = {
-                'first_name': emp_doc.get('first_name', ''),
-                'last_name': emp_doc.get('last_name', ''),
-                'department': emp_doc.get('department', ''),
-                'team': emp_doc.get('team', ''),
-                'department_id': str(emp_doc.get('department_id', '')),
-                'team_id': str(emp_doc.get('team_id', '')),
-                'employee_code': emp_doc.get('employee_id', '')
-            }
-        
-        payload = {
-            'user_id': str(user['_id']),
-            'username': user['username'],
-            'email': user.get('email', ''),
-            'role': role_name,
-            'employee_id': user.get('employee_id', '') or (str(emp_doc['_id']) if emp_doc else ''),
-            'exp': expiry,
-            **employee_data
-        }
-        
-        token = jwt.encode(
-            payload,
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM
-        )
-        
-        # Return token and user info
-        return JsonResponse({
-            'token': token,
-            'user': {
-                'id': str(user['_id']),
-                'username': user['username'],
-                'role': role_name,
-                'email': user.get('email', ''),
-                'employee_id': user.get('employee_id', '') or (str(emp_doc['_id']) if emp_doc else ''),
-                'expires': expiry.isoformat(),
-                **employee_data
-            }
-        })
+        login_attempts.delete_one({'_id': throttle_key})
+
+        token, user_info = build_session(user)
+        return JsonResponse({'token': token, 'user': user_info})
         
     except json.JSONDecodeError:
         return JsonResponse({
@@ -167,11 +209,12 @@ def login(request):
 def get_roles(request):
     """
     Get all available roles
-    MODIFIED: Permission check disabled for development
+    Admin only.
     Endpoint: GET /api/auth/roles
     """
     try:
-        # DEVELOPMENT MODE: No permission check required
+        if getattr(request, 'role', '') != 'Admin':
+            return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can manage roles.'}, status=403)
         # Get all roles from MongoDB
         all_roles = list(roles.find())
         
@@ -194,11 +237,12 @@ def get_roles(request):
 def create_role(request):
     """
     Create a new role
-    MODIFIED: Permission check disabled for development
+    Admin only.
     Endpoint: POST /api/auth/roles
     """
     try:
-        # DEVELOPMENT MODE: No permission check required
+        if getattr(request, 'role', '') != 'Admin':
+            return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can manage roles.'}, status=403)
         # Parse JSON data
         data = json.loads(request.body)
         name = data.get('name')
@@ -249,11 +293,12 @@ def create_role(request):
 def update_role(request, role_id):
     """
     Update an existing role
-    MODIFIED: Permission check disabled for development
+    Admin only.
     Endpoint: PUT /api/auth/roles/{role_id}
     """
     try:
-        # DEVELOPMENT MODE: No permission check required
+        if getattr(request, 'role', '') != 'Admin':
+            return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can manage roles.'}, status=403)
         # Parse JSON data
         data = json.loads(request.body)
         name = data.get('name')
@@ -308,11 +353,12 @@ def update_role(request, role_id):
 def delete_role(request, role_id):
     """
     Delete a role
-    MODIFIED: Permission check disabled for development
+    Admin only.
     Endpoint: DELETE /api/auth/roles/{role_id}
     """
     try:
-        # DEVELOPMENT MODE: No permission check required
+        if getattr(request, 'role', '') != 'Admin':
+            return JsonResponse({'error': 'Forbidden', 'message': 'Only administrators can manage roles.'}, status=403)
         # Check if role exists
         existing_role = roles.find_one({'_id': ObjectId(role_id)})
         if not existing_role:
@@ -370,6 +416,11 @@ def register(request):
             return JsonResponse({
                 'error': 'Missing data',
                 'message': 'Username, password, and email are required'
+            }, status=400)
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return JsonResponse({
+                'error': 'Invalid password',
+                'message': f'Password must be at least {MIN_PASSWORD_LENGTH} characters'
             }, status=400)
             
         # Check if username already exists
@@ -612,16 +663,16 @@ def reset_password(request, user_id):
         if not new_password:
             return JsonResponse({'error': 'Missing data', 'message': 'New password is required'}, status=400)
             
-        # Update both password (SHA256) and password_hash (Django) for compatibility
-        update_data = {
-            'password': hashlib.sha256(new_password.encode()).hexdigest(),
-            'password_hash': make_password(new_password),
-            'updated_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
-        }
-        
+        if len(new_password) < MIN_PASSWORD_LENGTH:
+            return JsonResponse({'error': 'Invalid password',
+                                 'message': f'Password must be at least {MIN_PASSWORD_LENGTH} characters'}, status=400)
+
+        # Only a salted Django hash is stored (older accounts may still carry an unsalted legacy hash; drop it)
         result = users.update_one(
             {'_id': ObjectId(user_id)},
-            {'$set': update_data}
+            {'$set': {'password': make_password(new_password),
+                      'updated_at': datetime.datetime.now(tz=datetime.timezone.utc).isoformat()},
+             '$unset': {'password_hash': ''}}
         )
         
         if result.matched_count == 0:
@@ -651,3 +702,85 @@ def role_detail_handler(request, role_id):
     elif request.method == 'DELETE':
         return delete_role(request, role_id)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def refresh_token(request):
+    """
+    POST /api/auth/refresh/ - exchange a still-valid token for a fresh one.
+    The middleware has already verified the presented token, so expired tokens cannot be refreshed.
+    """
+    payload = dict(getattr(request, 'user_info', {}) or {})
+    user = None
+    try:
+        user = users.find_one({'_id': ObjectId(request.user_id)})
+    except Exception:
+        pass
+    if not user or user.get('active') is False:
+        return JsonResponse({'error': 'Unauthorized', 'message': 'Account not found or disabled'}, status=401)
+    expiry = datetime.datetime.now(tz=datetime.timezone.utc) + settings.JWT_EXPIRATION_DELTA
+    payload['exp'] = expiry
+    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return JsonResponse({'token': token, 'expires': expiry.isoformat()})
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT"])
+def profile(request):
+    """
+    GET /api/auth/profile/ - the logged-in user's account.
+    PUT /api/auth/profile/ - update own email.
+    """
+    try:
+        user = users.find_one({'_id': ObjectId(request.user_id)})
+    except Exception:
+        user = None
+    if not user:
+        return JsonResponse({'error': 'Not found', 'message': 'User not found'}, status=404)
+    if request.method == 'PUT':
+        try:
+            body = json.loads(request.body or '{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        email = (body.get('email') or '').strip()
+        if email:
+            if users.find_one({'email': email, '_id': {'$ne': user['_id']}}):
+                return JsonResponse({'error': 'Conflict', 'message': 'Email already in use'}, status=409)
+            users.update_one({'_id': user['_id']}, {'$set': {'email': email}})
+            user['email'] = email
+    return JsonResponse({
+        'id': str(user['_id']), 'username': user.get('username'), 'email': user.get('email', ''),
+        'role': request.role, 'employee_id': str(getattr(request, 'employee_id', '') or ''),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def change_password(request):
+    """POST /api/auth/change-password/ {current_password, new_password}"""
+    try:
+        body = json.loads(request.body or '{}')
+        user = users.find_one({'_id': ObjectId(request.user_id)})
+    except Exception:
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+    if not user:
+        return JsonResponse({'error': 'Not found', 'message': 'User not found'}, status=404)
+    current, new = body.get('current_password') or '', body.get('new_password') or ''
+    stored = user.get('password') or user.get('password_hash') or ''
+    valid = False
+    try:
+        valid = check_password(current, stored)
+    except Exception:
+        pass
+    if not valid and hashlib.sha256(current.encode()).hexdigest() == stored:
+        valid = True
+    if not valid:
+        return JsonResponse({'error': 'Unauthorized', 'message': 'Current password is incorrect'}, status=401)
+    if len(new) < MIN_PASSWORD_LENGTH:
+        return JsonResponse({'error': 'Invalid password', 'message': 'New password must be at least 8 characters'}, status=400)
+    if new == current:
+        return JsonResponse({'error': 'Invalid password', 'message': 'Choose a password different from the current one'}, status=400)
+    users.update_one({'_id': user['_id']}, {'$set': {'password': hash_password(new)}, '$unset': {'password_hash': ''}})
+    return JsonResponse({'success': True, 'message': 'Password updated'})

@@ -1,28 +1,8 @@
-import axios from 'axios';
+import { createApiClient } from './api';
 
-const API_URL = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/assets`;
 
-// Create axios instance with default config
-const assetAPI = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+const assetAPI = createApiClient('/api/assets');
 
-// Add interceptor to add JWT token to every request
-assetAPI.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 const assetService = {
   // Get all assets
@@ -45,15 +25,7 @@ const assetService = {
     }
   },
 
-  // Get asset by ID
-  getAssetById: async (assetId) => {
-    try {
-      const response = await assetAPI.get(`/${assetId}/`);
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
-  },
+
 
   // Update asset status/details (admin)
   updateAsset: async (assetId, assetData) => {

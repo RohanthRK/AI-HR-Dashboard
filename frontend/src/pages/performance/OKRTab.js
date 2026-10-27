@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Grid, 
-  LinearProgress, 
-  Chip, 
+
+import {
+  Box,
+  Typography,
+  LinearProgress,
+  Chip,
   Button,
   ToggleButtonGroup,
   ToggleButton,
   CircularProgress,
   Alert,
-  IconButton,
   Paper,
   alpha,
   Dialog,
@@ -23,22 +22,30 @@ import {
   InputLabel,
   Select,
   IconButton as MuiIconButton,
-  List,
-  ListItem,
-  ListItemSecondaryAction,
-  ListItemText
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import AddIcon from '@mui/icons-material/Add';
+
 import EditIcon from '@mui/icons-material/Edit';
+
 import DeleteIcon from '@mui/icons-material/Delete';
+
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+
 import objectiveService from '../../services/objectiveService';
+
 import teamService from '../../services/teamService';
+
 import employeeService from '../../services/employeeService';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 import { useSnackbar } from 'notistack';
+
 import Autocomplete from '@mui/material/Autocomplete';
+
 
 const OKRTab = () => {
   const [objectives, setObjectives] = useState([]);
@@ -110,6 +117,10 @@ const OKRTab = () => {
       // For non-admins, pass team/dept filter if known
       const activeTeam = myTeamId || myTeamName;
       const activeDept = myDeptId || myDeptName;
+      if (scope === 'individual') {
+        const mine = myProfile?._id || currentUser?.employee_id;
+        if (/^[a-f0-9]{24}$/i.test(String(mine || ''))) params.employee_id = mine;
+      }
       if (scope === 'team' && activeTeam) {
         params.team_id = activeTeam;
       }
@@ -126,7 +137,7 @@ const OKRTab = () => {
     } finally {
       setLoading(false);
     }
-  }, [scope, currentUser, myTeamId, myTeamName, myDeptId, myDeptName]);
+  }, [scope, currentUser, myProfile, myTeamId, myTeamName, myDeptId, myDeptName]);
 
   useEffect(() => {
     fetchObjectives();
@@ -381,6 +392,7 @@ const OKRTab = () => {
                   }}
                 />
                 <MuiIconButton 
+                  aria-label="Remove key result"
                   onClick={() => {
                     const newKRs = newOkr.key_results.filter((_, i) => i !== idx);
                     setNewOkr({ ...newOkr, key_results: newKRs });
@@ -519,6 +531,7 @@ const OKRTab = () => {
                     }}
                   />
                   <MuiIconButton 
+                    aria-label="Remove key result"
                     onClick={() => {
                       const newKRs = selectedOkr.key_results.filter((_, i) => i !== idx);
                       setSelectedOkr({ ...selectedOkr, key_results: newKRs });
@@ -633,6 +646,7 @@ const OKRTab = () => {
                       okr.employee_id === currentUser?._id) && (
                       <MuiIconButton 
                         size="small" 
+                        aria-label={`Edit ${okr.title}`}
                         sx={{ ml: 1, border: '1px solid #000', borderRadius: 0, '&:hover': { bgcolor: '#fcc419' } }}
                         onClick={() => {
                           setSelectedOkr({
@@ -655,7 +669,7 @@ const OKRTab = () => {
                       borderRadius: 0, 
                       border: '2px solid #000',
                       bgcolor: getStatusColor(okr.status),
-                      color: '#fff',
+                      color: ['completed'].includes((okr.status || '').toLowerCase()) ? '#fff' : '#000',
                       ml: 2
                     }} 
                   />
@@ -667,6 +681,7 @@ const OKRTab = () => {
                     <Typography variant="body2" sx={{ fontWeight: 800 }}>{okr.progress}%</Typography>
                   </Box>
                   <LinearProgress 
+                    aria-label={`Progress of ${okr.title}`}
                     variant="determinate" 
                     value={okr.progress} 
                     sx={{ 

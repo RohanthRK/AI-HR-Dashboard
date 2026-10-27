@@ -4,7 +4,6 @@ import {
   Box,
   Typography,
   Paper,
-  Grid,
   Avatar,
   Chip,
   Button,
@@ -19,8 +18,9 @@ import {
   ListItemText,
   useTheme,
   alpha,
-  IconButton
+  IconButton,
 } from '@mui/material';
+import Grid from '@mui/material/GridLegacy';
 import {
   Email as EmailIcon,
   Phone as PhoneIcon,
@@ -38,10 +38,11 @@ import employeeService from '../../services/employeeService';
 import { useAuth } from '../../contexts/AuthContext';
 import ProfileEditModal from '../../components/employees/ProfileEditModal';
 import ManageSkillsModal from '../../components/employees/ManageSkillsModal';
+import { LeavesTab, PerformanceTab, DocumentsTab, PayTab } from '../../components/employees/ProfileTabs';
 
 const EmployeeProfile = () => {
   const { id } = useParams();
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, isAdmin, isManager } = useAuth();
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -72,7 +73,7 @@ const EmployeeProfile = () => {
 
   if (loading) return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh', bgcolor: 'background.default' }}>
-      <CircularProgress sx={{ color: '#fcc419' }} />
+      <CircularProgress sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
     </Box>
   );
 
@@ -107,7 +108,7 @@ const EmployeeProfile = () => {
       }}>
         {/* Dynamic Greeting Text Overlaying Banner */}
         <Box sx={{ zIndex: 1, position: 'relative' }}>
-          <Typography variant="overline" sx={{ color: '#fcc419', fontWeight: 900, mb: -1, display: 'block', fontSize: '1rem', letterSpacing: 3 }}>
+          <Typography variant="overline" sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419', fontWeight: 900, mb: -1, display: 'block', fontSize: '1rem', letterSpacing: 3 }}>
             EMPLOYEE HUB
           </Typography>
           <Typography variant="h1" sx={{ 
@@ -167,7 +168,7 @@ const EmployeeProfile = () => {
               />
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
-              <BadgeIcon sx={{ fontSize: 24, color: '#fcc419' }} />
+              <BadgeIcon sx={{ fontSize: 24, color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
               <Typography variant="h5" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary' }}>
                 {employee.position}
               </Typography>
@@ -203,7 +204,7 @@ const EmployeeProfile = () => {
           <Grid container spacing={4}>
             <Grid item>
               <Stack direction="row" spacing={2} alignItems="center">
-                <EmailIcon sx={{ color: '#fcc419' }} />
+                <EmailIcon sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
                 <Box>
                     <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Email Address</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 700 }}>{employee.email || 'Not Added'}</Typography>
@@ -212,7 +213,7 @@ const EmployeeProfile = () => {
             </Grid>
             <Grid item>
               <Stack direction="row" spacing={2} alignItems="center">
-                <PhoneIcon sx={{ color: '#fcc419' }} />
+                <PhoneIcon sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
                 <Box>
                     <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Phone Number</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 700 }}>{employee.phone || 'Not Added'}</Typography>
@@ -221,7 +222,7 @@ const EmployeeProfile = () => {
             </Grid>
             <Grid item>
               <Stack direction="row" spacing={2} alignItems="center">
-                <LocationIcon sx={{ color: '#fcc419' }} />
+                <LocationIcon sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
                 <Box>
                     <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Location</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 700 }}>{employee.location || 'Not Added'}</Typography>
@@ -230,7 +231,7 @@ const EmployeeProfile = () => {
             </Grid>
             <Grid item>
               <Stack direction="row" spacing={2} alignItems="center">
-                <BadgeIcon sx={{ color: '#fcc419' }} />
+                <BadgeIcon sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
                 <Box>
                     <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Employee ID</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 700 }}>{employee.employee_id || 'Not Added'}</Typography>
@@ -239,7 +240,7 @@ const EmployeeProfile = () => {
             </Grid>
             <Grid item>
               <Stack direction="row" spacing={2} alignItems="center">
-                <PeopleIcon sx={{ color: '#fcc419' }} />
+                <PeopleIcon sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
                 <Box>
                     <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Gender</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 700 }}>{employee.gender || 'Not Added'}</Typography>
@@ -248,7 +249,7 @@ const EmployeeProfile = () => {
             </Grid>
             <Grid item>
               <Stack direction="row" spacing={2} alignItems="center">
-                <CalendarIcon sx={{ color: '#fcc419' }} />
+                <CalendarIcon sx={{ color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }} />
                 <Box>
                     <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>DOB</Typography>
                     <Typography variant="body1" sx={{ fontWeight: 700 }}>{employee.date_of_birth || 'Not Added'}</Typography>
@@ -317,13 +318,15 @@ const EmployeeProfile = () => {
           sx={{ 
             minHeight: 60,
             '& .MuiTab-root': { color: 'text.secondary', opacity: theme.palette.mode === 'light' ? 0.6 : 0.85, fontWeight: 900, fontSize: '1.2rem', letterSpacing: 1, mr: 6, px: 0 },
-            '& .Mui-selected': { color: '#fcc419 !important', opacity: 1 },
+            '& .Mui-selected': { color: `${theme.palette.mode === 'light' ? '#000' : '#fcc419'} !important`, opacity: 1 },
             '& .MuiTabs-indicator': { backgroundColor: '#fcc419', height: 6 }
           }}
         >
           <Tab label="ABOUT" />
           <Tab label="PERFORMANCE" />
           <Tab label="LEAVES" />
+          <Tab label="DOCUMENTS" />
+          {(isOwner || isAdmin()) && <Tab label="PAY" />}
         </Tabs>
       </Box>
 
@@ -388,11 +391,11 @@ const EmployeeProfile = () => {
                     </Grid>
                     <Grid item xs={12} sm={6}>
                       <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 900, display: 'block', mb: 1, textTransform: 'uppercase' }}>Contact No.</Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#fcc419' }}>{employee.emergency_contact_phone || 'Not Added'}</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419' }}>{employee.emergency_contact_phone || 'Not Added'}</Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
                       <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.7, fontWeight: 900, display: 'block', mb: 1, textTransform: 'uppercase' }}>Personal Email</Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#fcc419', wordBreak: 'break-all' }}>{employee.personal_email || 'Not Added'}</Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419', wordBreak: 'break-all' }}>{employee.personal_email || 'Not Added'}</Typography>
                     </Grid>
                   </Grid>
                 </Paper>
@@ -414,7 +417,7 @@ const EmployeeProfile = () => {
                   position: 'relative'
                 }}>
                   <Box sx={{ position: 'absolute', top: -15, left: 20, bgcolor: '#4db6ac', color: '#000', px: 2, py: 0.5, border: brutalBorder, fontWeight: 900 }}>SKILLS</Box>
-                  <SkillIcon sx={{ fontSize: 80, color: '#fcc419', mb: 1, mt: 2 }} />
+                  <SkillIcon sx={{ fontSize: 80, color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419', mb: 1, mt: 2 }} />
                   <Typography variant="h4" sx={{ fontWeight: 900, mb: 3, textTransform: 'uppercase' }}>Skill Set</Typography>
                   
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center', mb: 4 }}>
@@ -452,7 +455,7 @@ const EmployeeProfile = () => {
                                 component="span"
                                 sx={{
                                   bgcolor: profColor,
-                                  color: '#fff',
+                                  color: '#000',
                                   fontWeight: 900,
                                   fontSize: '0.7rem',
                                   px: 0.75,
@@ -495,9 +498,9 @@ const EmployeeProfile = () => {
                     <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
                       Reporting Team ({employee.reporting_team_count || 0})
                     </Typography>
-                    <IconButton size="small" sx={{ color: '#000' }}><MoreIcon /></IconButton>
+                    <IconButton size="small" aria-label="More" sx={{ color: '#000' }}><MoreIcon /></IconButton>
                   </Box>
-                  <List sx={{ p: 0 }}>
+                  <List component="div" sx={{ p: 0 }}>
                     {(employee.reporting_team || []).map((member, index) => (
                       <React.Fragment key={member.id}>
                         <ListItem 
@@ -516,7 +519,7 @@ const EmployeeProfile = () => {
                               mr: 3, 
                               width: 50, 
                               height: 50,
-                              bgcolor: (index % 2 === 0 ? '#5c6bc0' : '#26a69a'), 
+                              bgcolor: (index % 2 === 0 ? '#3949ab' : '#00796b'), 
                               fontWeight: 900,
                               border: '2px solid #000',
                               borderRadius: 0
@@ -527,7 +530,7 @@ const EmployeeProfile = () => {
                             primary={member.name} 
                             secondary={member.position} 
                             primaryTypographyProps={{ sx: { fontWeight: 900, fontSize: '1.2rem', textTransform: 'uppercase' } }}
-                            secondaryTypographyProps={{ sx: { color: '#fcc419', fontWeight: 700, fontSize: '0.85rem', mt: 0.5 } }}
+                            secondaryTypographyProps={{ sx: { color: theme.palette.mode === 'light' ? '#8a6300' : '#fcc419', fontWeight: 700, fontSize: '0.85rem', mt: 0.5 } }}
                           />
                           <ChevronRightIcon sx={{ fontSize: 30, opacity: 0.3 }} />
                         </ListItem>
@@ -546,54 +549,13 @@ const EmployeeProfile = () => {
           </Grid>
         )}
 
-        {activeTab === 1 && (
-          <Box sx={{ py: 4 }}>
-            <Grid container spacing={4}>
-              <Grid item xs={12} md={4}>
-                <Paper sx={{ p: 4, bgcolor: '#fcc419', color: '#000', border: brutalBorder, boxShadow: brutalBoxShadow, borderRadius: 0, textAlign: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 900, mb: 1 }}>OVERALL RATING</Typography>
-                  <Typography variant="h1" sx={{ fontWeight: 900 }}>4.8</Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 800, opacity: 0.8 }}>Exceeding Expectations</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={12} md={8}>
-                <Stack spacing={3}>
-                  {['Quarterly OKRs', 'Ongoing Goals', 'Peer Feedback'].map((title) => (
-                    <Paper key={title} sx={{ p: 3, bgcolor: 'background.paper', border: brutalBorder, boxShadow: brutalBoxShadow, borderRadius: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="h5" sx={{ fontWeight: 900 }}>{title}</Typography>
-                      <Button variant="contained" sx={{ bgcolor: '#000', color: '#fff', borderRadius: 0, fontWeight: 900 }}>VIEW DETAILS</Button>
-                    </Paper>
-                  ))}
-                </Stack>
-              </Grid>
-            </Grid>
-          </Box>
-        )}
+        {activeTab === 1 && <PerformanceTab employee={employee} />}
 
-        {activeTab === 2 && (
-          <Box sx={{ py: 4 }}>
-            <Grid container spacing={4}>
-              {[
-                { label: 'Annual Leave', balance: 12, total: 20, color: '#fcc419' },
-                { label: 'Sick Leave', balance: 5, total: 10, color: '#ff6b6b' },
-                { label: 'Casual Leave', balance: 6, total: 10, color: '#4db6ac' }
-              ].map((item) => (
-                <Grid item xs={12} md={4} key={item.label}>
-                  <Paper sx={{ p: 4, bgcolor: 'background.paper', border: brutalBorder, boxShadow: brutalBoxShadow, borderRadius: 0, textAlign: 'center' }}>
-                    <Typography variant="h6" sx={{ fontWeight: 900, mb: 2, textTransform: 'uppercase' }}>{item.label}</Typography>
-                    <Box sx={{ position: 'relative', display: 'inline-flex', mb: 3 }}>
-                      <CircularProgress variant="determinate" value={(item.balance / item.total) * 100} size={120} thickness={10} sx={{ color: item.color }} />
-                      <Box sx={{ top: 0, left: 0, bottom: 0, right: 0, position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Typography variant="h4" component="div" sx={{ fontWeight: 900 }}>{item.balance}</Typography>
-                      </Box>
-                    </Box>
-                    <Typography variant="body1" sx={{ fontWeight: 800, color: 'text.secondary' }}>{item.balance} / {item.total} Days Left</Typography>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
-        )}
+        {activeTab === 2 && <LeavesTab employee={employee} />}
+
+        {activeTab === 3 && <DocumentsTab employee={employee} canDelete={isAdmin()} />}
+
+        {activeTab === 4 && <PayTab employee={employee} isStaff={isAdmin()} />}
       </Box>
 
       {/* 7. EDIT MODAL */}

@@ -1,7 +1,6 @@
 import json
 import datetime
 from django.http import JsonResponse
-from django.core.paginator import Paginator
 from bson import ObjectId
 
 def serialize_document(doc):
